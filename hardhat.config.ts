@@ -3,11 +3,35 @@ import "@nomicfoundation/hardhat-toolbox";
 import "@nomiclabs/hardhat-ethers";
 import dotenv from "dotenv";
 dotenv.config();
+const URL = "https://arbitrum.llamarpc.com";
+const BLOCKNUMBER = 151396608;
 const DEPLOY = process.env.DEPLOY!;
 const AR = process.env.ARBITRUM_KEY!;
 const KEY2 = process.env.KEY2!;
 const config: HardhatUserConfig = {
-  solidity: "0.8.20",
+  solidity: {
+    compilers: [
+      {
+        version: "0.8.20",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 1000,
+          },
+        },
+      },
+      {
+        version: "0.8.17",
+      },
+      
+    ],
+  },
+  defaultNetwork: "hardhat",
+  networks: {
+    hardhat: {
+      
+    }
+  }
   // networks: {
   //   avalanche: {
   //     url: "https://avalanche.public-rpc.com",
