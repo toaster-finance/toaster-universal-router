@@ -1,3 +1,4 @@
+import { BigNumber } from "ethers";
 import { ethers} from "hardhat";
 
 const ROUTER_ABI: any[] = [
@@ -105,14 +106,14 @@ export const approve = async (
 };
 
 export const approveMax = async (
-  tokenAddr: `0x${string}`,
-  spender: `0x${string}`
+  tokenAddr: string,
+  spender: string
 ) => {
   const token= await ethers.getContractAt("IERC20", tokenAddr);
   const signer = await ethers.getSigners();
 
   const allowance = await token.allowance(signer[0].address, spender);
-  if (allowance != ethers.constants.MaxUint256.toBigInt()) {
+  if (allowance != ethers.constants.MaxUint256) {
     await token.approve(spender, 0);
     return token
       .approve(spender, ethers.constants.MaxUint256.toBigInt() - 1n)
@@ -120,7 +121,7 @@ export const approveMax = async (
   }
 };
 
-export const getBalance = async (tokenAddr: `0x${string}`,owner?:string) :Promise<bigint>=> {
+export const getBalance = async (tokenAddr: `0x${string}`,owner?:string) :Promise<BigNumber>=> {
   const token = await ethers.getContractAt("IERC20", tokenAddr);
   if (owner) {
     
@@ -129,7 +130,7 @@ export const getBalance = async (tokenAddr: `0x${string}`,owner?:string) :Promis
   const [signer] = await ethers.getSigners();
   return token.balanceOf(signer.address);
 };
-export const getTokens = async (
+export const doExactOutput = async (
   tokenIn: `0x${string}`,
   tokenOut: `0x${string}`,
   amountOut: bigint,
@@ -139,6 +140,7 @@ export const getTokens = async (
 
   const router = await ethers.getContractAt(ROUTER_ABI, routerAddr);
   const [signer] = await ethers.getSigners();
+  
   await approveMax(tokenIn, routerAddr);
 
   return router.exactOutputSingle({
@@ -152,7 +154,7 @@ export const getTokens = async (
   });
 };
 
-export const getTokenIn = async (
+export const doExactInput = async (
   tokenIn: `0x${string}`,
   tokenOut: `0x${string}`,
   amountIn: bigint,
