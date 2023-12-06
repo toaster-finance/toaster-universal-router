@@ -36,20 +36,21 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
 
     let USDC_WETH_RATIO: bigint;
   
-    let maker: SignerWithAddress;
+    let maker1: SignerWithAddress;
+    let maker2: SignerWithAddress;
     let taker: SignerWithAddress;
     let testSnapShot: SnapshotRestorer;
    
     before("Fork Arbitrum Mainnet & Deploy toaster", async () => {
       await reset(URL, BLOCKNUMBER);
 
-      [maker] = await ethers.getSigners();
+      [maker1] = await ethers.getSigners();
       const toaster_f = await ethers.getContractFactory("UniV3Toaster");
       toaster = await toaster_f
         .deploy(MANAGER, FUSION)
         .then((t) => t.deployed());
       // set maker have 10000 WETH & 10000 USDC
-      await setBalance(maker.address, parseEther("1000000000"));
+      await setBalance(maker1.address, parseEther("1000000000"));
       await deposit(WETH, parseEther("10000").toBigInt()); // 10000 WETH
       expect(await getBalance(WETH)).to.equal(parseEther("10000"));
       await doExactOutput(WETH, USDC, parseUnits("10000", 6).toBigInt(), ROUTER); // 10000 USDC
@@ -158,7 +159,7 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
       .connect(taker)
       .fillOrderPostInteraction(
         mockOrderHash,
-        maker.address,
+        maker1.address,
         taker.address,
         MAKING,
         TAKING,
@@ -194,7 +195,7 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
     .connect(taker)
     .fillOrderPostInteraction(
       mockOrderHash,
-      maker.address,
+      maker1.address,
       taker.address,
       MAKING,
       TAKING,
@@ -234,7 +235,7 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
       .connect(taker)
       .fillOrderPostInteraction(
         mockOrderHash,
-        maker.address,
+        maker1.address,
         taker.address,
         MAKING,
         TAKING,
@@ -332,7 +333,7 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
       .connect(taker)
       .fillOrderPostInteraction(
         mockOrderHash,
-        maker.address,
+        maker1.address,
         taker.address,
         MAKING,
         TAKING,
@@ -365,7 +366,7 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
     .connect(taker)
     .fillOrderPostInteraction(
       mockOrderHash,
-      maker.address,
+      maker1.address,
       taker.address,
       MAKING,
       TAKING,
@@ -403,7 +404,7 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
       .connect(taker)
       .fillOrderPostInteraction(
         mockOrderHash,
-        maker.address,
+        maker1.address,
         taker.address,
         MAKING,
         TAKING,
@@ -421,4 +422,12 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
     await testSnapShot.restore();
   
   });
+  it("Test 3 : Process simultaneously two maker's order,[ 2 WETH + 5000 USDC(MAKER1), 3WETH + 5000USDC(MAKER2) ]", async () => {
+
+  });
+
+  it("Test 3 - 1 : Process maker1's order [fill partial]", async () => {});
+  it("Test 3 - 2 : Process maker2's order [fill partial]", async () => {});
+  it("Test 3 - 3 : Process maker1's order [fill total]", async () => { });
+  it("Test 3 - 4 : Process maker2's order [fill total]", async () => {});
 });
