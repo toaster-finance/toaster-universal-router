@@ -44,13 +44,13 @@ export const getMakingAmount = async (params: IGetMakingAmount): Promise<{ isMak
         
         if((sqrtPriceCX96 ** 2n) >> 192n != 0n) {
             // exchangeRate = ( token1 amount ) / (token0 amount) = sqrtPriceCX96 ** 2n / 2 ** 192n
-            const exchangeRate = ((sqrtPriceCX96 ** 2n) / (2n**96n))**2n;
+            const exchangeRate = ( sqrtPriceCX96 ** 2n / 2n**96n )**2n;
             const makingAmount = (amount0Desired * optimalAmount1 - amount1Desired * optimalAmount0) / (optimalAmount1 + optimalAmount0 * exchangeRate);
             const estimateTakingAmount = makingAmount * exchangeRate;
             return { isMakingZero, makingAmount, estimateTakingAmount };
         } else {
             // exchangeRate = (token0 amount) / (token1 amount) = 2 ** 192n / sqrtPriceCX96 ** 2n
-            const exchangeRate = ((2n**96n) / sqrtPriceCX96) ** 2n;
+            const exchangeRate = ( 2n**96n / sqrtPriceCX96) ** 2n;
             const makingAmount = (amount0Desired * optimalAmount1 - amount1Desired * optimalAmount0) * exchangeRate / (optimalAmount0 + optimalAmount1 * exchangeRate);
             const estimateTakingAmount = makingAmount / exchangeRate;
             return { isMakingZero, makingAmount, estimateTakingAmount };
@@ -65,7 +65,7 @@ export const getMakingAmount = async (params: IGetMakingAmount): Promise<{ isMak
           return { isMakingZero, makingAmount, estimateTakingAmount };
         } else {
           // exchangeRate = (token0 amount) / (token1 amount) = 2 ** 192n / sqrtPriceCX96 ** 2n
-            const exchangeRate = (2n ** 96n / sqrtPriceCX96) ** 2n;
+            const exchangeRate = ( 2n ** 96n / sqrtPriceCX96 ) ** 2n;
             const makingAmount = (amount1Desired * optimalAmount0 - amount0Desired * optimalAmount1) / (optimalAmount0 + optimalAmount1 * exchangeRate);
             const estimateTakingAmount = makingAmount * exchangeRate;
           

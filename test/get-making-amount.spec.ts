@@ -6,7 +6,7 @@ import { expect } from "chai";
 import { INonfungiblePositionManager } from "../typechain-types";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 import { splitHash } from "../utils/event";
-import { approveMax, doExactInput, doExactOutput } from "../utils/erc20";
+import { approveMax, doExactInput, doExactOutput, getBalance } from "../utils/erc20";
 import { deposit } from "../utils/weth";
 const URL = "https://arbitrum.llamarpc.com";
 const BLOCKNUMBER = 151396608;
@@ -158,4 +158,74 @@ describe("Test getMakingAmount", () => {
 
       await snapshot.restore();
     });
+    
+  
+  it("Check Making Amount, if invest 5 WETH 10000 USDC", async () => {
+    const snapshot = await takeSnapshot();
+    await deposit(WETH, parseEther("12").toBigInt()); // 3 WETH
+    await doExactOutput(WETH, USDC, parseUnits("15000", 6).toBigInt(), ROUTER);
+    const AMOUNT0 = parseUnits("10000", 6).toBigInt();
+    const AMOUNT1 = parseEther("5").toBigInt();
+    const [token0, token1] = USDC < WETH ? [USDC, WETH] : [WETH, USDC];
+    const [_amount0Desired, _amount1Desired] =
+      USDC < WETH ? [AMOUNT0, AMOUNT1] : [AMOUNT1, AMOUNT0];
+    const tick = await (await ethers.getContractAt("IUniswapV3PoolState", POOL))
+      .slot0()
+      .then((slot0) => slot0.tick);
+    const tickSpacing = await (
+      await ethers.getContractAt("IUniswapV3PoolImmutables", POOL)
+    ).tickSpacing();
+    const currentTick =
+      BigInt(Math.floor(Number(tick / tickSpacing))) * BigInt(tickSpacing);
+    const _lowerTick = currentTick - BigInt(tickSpacing) * 10n;
+    const _upperTick = currentTick + BigInt(tickSpacing) * 5n;
+    const { makingAmount, estimateTakingAmount, isMakingZero } =
+      await getMakingAmount({
+        tickLower: _lowerTick,
+        tickUpper: _upperTick,
+        token0,
+        token1,
+        fee: FEE,
+        factoryAddr: FACTORY,
+        amount0Desired: _amount0Desired,
+        amount1Desired: _amount1Desired,
+      });
+    expect(isMakingZero).to.equal(true);
+    expect(formatEther(makingAmount)).to.equal("1.901902387369338306");
+    expect(formatUnits(estimateTakingAmount, 6)).to.equal("3669.244133");
+    const [amount0Mint, amount1Mint] = [
+      _amount0Desired - makingAmount,
+      _amount1Desired + estimateTakingAmount,
+    ];
+    expect(formatEther(amount0Mint)).to.equal("3.098097612630661694");
+    expect(formatUnits(amount1Mint, 6)).to.equal("13669.244133");
+    await approveMax(token0, MANAGER);
+    await approveMax(token1, MANAGER);
+
+    const [amount0Success, amount1Success] = await manager
+      .mint({
+        token0,
+        token1,
+        fee: FEE,
+        tickLower: _lowerTick,
+        tickUpper: _upperTick,
+        amount0Desired: amount0Mint,
+        amount1Desired: amount1Mint,
+        amount0Min: 0n,
+        amount1Min: 0n,
+        recipient: signer.address,
+        deadline: ethers.constants.MaxUint256,
+      })
+      .then((tx) => tx.wait())
+      .then(
+        (r) => r.logs.filter((log) => log.topics[0] === MINT_EVENT_SIGNATURE)[0]
+      )
+      .then((mintLog) => splitHash(mintLog.data))
+      .then((data) => [data[2], data[3]]);
+    expect(formatEther(amount0Success)).to.equal("3.098097612615315517");
+    expect(formatUnits(amount1Success, 6)).to.equal("13669.244133");
+
+    await snapshot.restore();
+  });
+  
  });

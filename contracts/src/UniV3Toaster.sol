@@ -98,29 +98,18 @@ contract UniV3Toaster is IPostInteractionNotificationReceiver{
             uint takingAmountTotal = taking[orderHash][position.quoteToken] + takingAmount;
             taking[orderHash][position.quoteToken] = 0;
             making[orderHash][position.baseToken] = 0;
-            console.log("baseAmountDesired", position.baseAmountDesired);
-            console.log("quoteAmountDesired", position.quoteAmountDesired);
-            console.log("makingAmountTotal", makingAmountTotal);
-            console.log("takingAmountTotal", takingAmountTotal);
-            // calculate actual amount of base, quote token to pull
+            
+            // calculate actual amount of base, quote token to mint position
             actual.baseAmount = position.baseAmountDesired - makingAmountTotal;
-            console.log("actual.baseAmount before calc", actual.baseAmount);
-
             actual.quoteAmount = position.quoteAmountDesired + takingAmountTotal;
-            console.log("actual.quoteAmount before calc", actual.quoteAmount);
-
             calculateActualAmount(position, actual);
+            if(actual.baseAmount > 0) SafeERC20.safeTransferFrom(IERC20(position.baseToken), maker, address(this), actual.baseAmount);
+            if(actual.quoteAmount > 0) SafeERC20.safeTransferFrom(IERC20(position.quoteToken), maker, address(this), actual.quoteAmount - takingAmountTotal);
         } 
-
-        SafeERC20.safeTransferFrom(IERC20(position.baseToken), maker, address(this), actual.baseAmount);
-        SafeERC20.safeTransferFrom(IERC20(position.quoteToken), maker, address(this), actual.quoteAmount);
 
         SafeERC20.forceApprove(IERC20(position.baseToken), address(manager), actual.baseAmount);
         SafeERC20.forceApprove(IERC20(position.quoteToken), address(manager), actual.quoteAmount);
 
-        console.log("actual.baseAmount after calc", actual.baseAmount);
-        console.log("actual.quoteAmount after calc", actual.quoteAmount);
-       
         {
             bool isBaseZero = (position.baseToken < position.quoteToken);
             // mint position 
@@ -137,62 +126,40 @@ contract UniV3Toaster is IPostInteractionNotificationReceiver{
                 recipient: maker,
                 deadline: block.timestamp
             }));
-            (actual.baseAmount,actual.quoteAmount) = (position.baseToken < position.quoteToken) ? 
-                (actual.baseAmount - _amount0Result,actual.quoteAmount - _amount1Result):
-                (actual.baseAmount - _amount1Result,actual.quoteAmount - _amount0Result);
-
+            unchecked {
+                (actual.baseAmount,actual.quoteAmount) = (position.baseToken < position.quoteToken) ? 
+                    (actual.baseAmount - _amount0Result,actual.quoteAmount - _amount1Result):
+                    (actual.baseAmount - _amount1Result,actual.quoteAmount - _amount0Result);
+            }
         }
-        if(position.baseToken != address(WETH)) {
+        if(actual.baseAmount > 0 ) {
             // if surplus > 0, return surplus to maker , it will be always baseToken
             SafeERC20.safeTransfer(IERC20(position.baseToken), maker, actual.baseAmount);
-        } else if(position.baseToken == address(WETH)){
-            unwrapWETH9(actual.baseAmount, maker);
-        }
-        if(position.quoteToken != address(WETH)) {
+        } 
+        if(actual.quoteAmount > 0) {
             // if surplus > 0, return surplus to maker , it will be always quoteToken
             SafeERC20.safeTransfer(IERC20(position.quoteToken), maker, actual.quoteAmount);
-        } else if(position.quoteToken == address(WETH)){
-            unwrapWETH9(actual.quoteAmount, maker);
-        }
+        } 
         //Reset Approval
         SafeERC20.forceApprove(IERC20(position.baseToken), address(manager), 0);
         SafeERC20.forceApprove(IERC20(position.quoteToken), address(manager), 0);
     }
     function calculateActualAmount(PositionCache memory position, ActualAmountCache memory actual) internal view {
-        
+        bool isBaseZero = position.baseToken < position.quoteToken;
+        uint160 sqrtRatioLX96 = TickMath.getSqrtRatioAtTick(position.tickLower);
+        uint160 sqrtRatioUX96 = TickMath.getSqrtRatioAtTick(position.tickUpper);
+        (uint160 sqrtRatioCX96,,,,,,) = IUniswapV3PoolState(factory.getPool(position.baseToken, position.quoteToken, position.fee)).slot0();
         // calculate acutal baseAmount from actual quoteAmount
-        uint _baseAmount = getOppTokenAmount(position.tickLower,position.tickUpper,position.quoteToken, position.baseToken, position.fee, actual.quoteAmount);
-
-        console.log("_baseAmount", _baseAmount);
-        if( _baseAmount > actual.baseAmount ) {
-            // if actual.baseAmount is not enough for minting
-            // calculate quoteAmount from actual baseAmount
-            actual.quoteAmount = getOppTokenAmount(position.tickLower, position.tickUpper, position.baseToken , position.quoteToken, position.fee, actual.baseAmount);
-            console.log("_quoteAmount", actual.quoteAmount);
-        } else actual.baseAmount = _baseAmount;
-
+        uint128 liquidity = isBaseZero ? LiquidityAmounts.getLiquidityForAmounts(sqrtRatioCX96 , sqrtRatioLX96, sqrtRatioUX96, actual.baseAmount, actual.quoteAmount) : 
+            LiquidityAmounts.getLiquidityForAmounts(sqrtRatioLX96, sqrtRatioCX96, sqrtRatioUX96, actual.quoteAmount, actual.baseAmount);
+            
+        (uint amount0, uint amount1) = LiquidityAmounts.getAmountsForLiquidity(sqrtRatioCX96, sqrtRatioLX96, sqrtRatioUX96, liquidity);
+            
+        (actual.baseAmount) = isBaseZero ? amount0 : amount1;
+        (actual.quoteAmount) = isBaseZero ? amount1 : amount0;
         
     }
-    function getOppTokenAmount(int24 tickLower, int24 tickUpper,address self, address opp, uint24 fee, uint256 selfAmount) internal view returns(uint256 oppAmount){ 
 
-        (uint160 sqrtRatioCX96,,,,,,) = IUniswapV3PoolState(factory.getPool(self, opp, fee)).slot0();
-
-        uint160 sqrtRatioLX96 = TickMath.getSqrtRatioAtTick(tickLower);
-
-        uint160 sqrtRatioUX96 = TickMath.getSqrtRatioAtTick(tickUpper);
-
-        bool isSelfZero = self < opp;
-
-        uint128 _liquidity = isSelfZero ? LiquidityAmounts.getLiquidityForAmount0(sqrtRatioCX96, sqrtRatioUX96, selfAmount): LiquidityAmounts.getLiquidityForAmount1(sqrtRatioLX96, sqrtRatioCX96, selfAmount);
-
-        oppAmount = isSelfZero ? SqrtPriceMath.getAmount1Delta(sqrtRatioCX96, sqrtRatioUX96,_liquidity ,true) : SqrtPriceMath.getAmount0Delta(sqrtRatioLX96, sqrtRatioCX96, _liquidity,true);
-    }
-
-    function unwrapWETH9(uint256 value,address to) internal {
-        WETH.withdraw(value);
-        (bool success, ) = to.call{value: value}(new bytes(0));
-        require(success, 'STE');
-    }
     // function cancelOrder(Order order,bytes32 orderHash,address token) external {
     //     require(order.maker == msg.sender,"INVALID_MAKER");
     //     balances[order][msg.sender] = 0;

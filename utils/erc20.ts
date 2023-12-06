@@ -121,7 +121,7 @@ export const approveMax = async (
   }
 };
 
-export const getBalance = async (tokenAddr: `0x${string}`,owner?:string) :Promise<BigNumber>=> {
+export const getBalance = async (tokenAddr: string,owner?:string) :Promise<BigNumber>=> {
   const token = await ethers.getContractAt("IERC20", tokenAddr);
   if (owner) {
     

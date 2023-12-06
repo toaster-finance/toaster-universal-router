@@ -3,6 +3,7 @@ pragma solidity >=0.5.0;
 
 import './FixedPoint96.sol';
 import "@openzeppelin/contracts/utils/math/Math.sol";
+
 /// @title Liquidity amount functions
 /// @notice Provides functions for computing liquidity amounts from token amounts and prices
 library LiquidityAmounts {
@@ -129,6 +130,7 @@ library LiquidityAmounts {
         } else if (sqrtRatioX96 < sqrtRatioBX96) {
             amount0 = getAmount0ForLiquidity(sqrtRatioX96, sqrtRatioBX96, liquidity);
             amount1 = getAmount1ForLiquidity(sqrtRatioAX96, sqrtRatioX96, liquidity);
+            
         } else {
             amount1 = getAmount1ForLiquidity(sqrtRatioAX96, sqrtRatioBX96, liquidity);
         }
