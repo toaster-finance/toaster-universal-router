@@ -12,7 +12,7 @@ import {SqrtPriceMath} from "../external/uniswapv3/libraries/SqrtPriceMath.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {TickMath} from "../external/uniswapv3/libraries/TickMath.sol";
 import {WETH9} from "../token/WETH9.sol";
-import "hardhat/console.sol";
+
 struct Order {
         uint256 salt;
         address makerAsset;
@@ -93,7 +93,7 @@ contract UniV3Toaster is IPostInteractionNotificationReceiver{
             return;
         }
         {
-
+            
             uint makingAmountTotal = making[orderHash][position.baseToken] + makingAmount;
             uint takingAmountTotal = taking[orderHash][position.quoteToken] + takingAmount;
             taking[orderHash][position.quoteToken] = 0;
@@ -105,6 +105,8 @@ contract UniV3Toaster is IPostInteractionNotificationReceiver{
             calculateActualAmount(position, actual);
             if(actual.baseAmount > 0) SafeERC20.safeTransferFrom(IERC20(position.baseToken), maker, address(this), actual.baseAmount);
             if(actual.quoteAmount > 0) SafeERC20.safeTransferFrom(IERC20(position.quoteToken), maker, address(this), actual.quoteAmount - takingAmountTotal);
+            
+
         } 
 
         SafeERC20.forceApprove(IERC20(position.baseToken), address(manager), actual.baseAmount);

@@ -107,16 +107,17 @@ export const approve = async (
 
 export const approveMax = async (
   tokenAddr: string,
-  spender: string
+  spender: string,
+  owner?: string,
 ) => {
+  
   const token= await ethers.getContractAt("IERC20", tokenAddr);
-  const signer = await ethers.getSigners();
+  const signer = owner ? await ethers.getSigner(owner) :(await ethers.getSigners())[0];
 
-  const allowance = await token.allowance(signer[0].address, spender);
+  const allowance = await token.connect(signer).allowance(signer.address, spender);
   if (allowance != ethers.constants.MaxUint256) {
-    await token.approve(spender, 0);
-    return token
-      .approve(spender, ethers.constants.MaxUint256.toBigInt() - 1n)
+    await token.connect(signer).approve(spender, 0);
+    return token.connect(signer).approve(spender, ethers.constants.MaxUint256.toBigInt() - 1n)
 
   }
 };

@@ -1,10 +1,11 @@
+import { IERC20 } from './../typechain-types/@openzeppelin/contracts/token/ERC20/IERC20';
 import { deposit, depositAndTransferTo } from './../utils/weth';
 import { expect } from 'chai';
 import { ethers} from "hardhat";
 import { IERC20__factory, IUniswapV3PoolState, UniV3Toaster} from "../typechain-types";
 import { approveMax, getBalance, doExactOutput, doExactInput } from "../utils/erc20";
 import { SnapshotRestorer, impersonateAccount, reset, setBalance, takeSnapshot } from "@nomicfoundation/hardhat-network-helpers";
-import { formatUnits,parseEther,parseUnits,formatEther,AbiCoder,hexZeroPad, splitSignature } from 'ethers/lib/utils';
+import { formatUnits,parseEther,parseUnits,formatEther,AbiCoder,hexZeroPad, splitSignature, hexlify } from 'ethers/lib/utils';
 import {  SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { splitHash } from '../utils/event';
 import { getMakingAmount } from '../scripts/getMakingAmount';
@@ -422,12 +423,269 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
     await testSnapShot.restore();
   
   });
-  it("Test 3 : Process simultaneously two maker's order,[ 2 WETH + 5000 USDC(MAKER1), 3WETH + 5000USDC(MAKER2) ]", async () => {
-
+  let amount0DesiredMaker1: bigint;
+  let amount1DesiredMaker1: bigint;
+  let amount0DesiredMaker2: bigint;
+  let amount1DesiredMaker2: bigint;
+  let makingAmount1: bigint;
+  let makingAmount2: bigint;
+  let baseAmountDesired1: bigint;
+  let quoteAmountDesired1: bigint;
+  let baseAmountDesired2: bigint;
+  let quoteAmountDesired2: bigint;
+  it("Maker 2 get amount ", async () => {
+    [maker1, maker2] = await ethers.getSigners();
+    await setBalance(maker2.address, parseEther("1000000000"));
+    await doExactOutput(WETH, USDC, parseUnits("10000", 6).toBigInt(), ROUTER, maker2.address);
+    await depositAndTransferTo(WETH, parseEther("100").toBigInt(), maker2.address);
   });
 
-  it("Test 3 - 1 : Process maker1's order [fill partial]", async () => {});
-  it("Test 3 - 2 : Process maker2's order [fill partial]", async () => {});
-  it("Test 3 - 3 : Process maker1's order [fill total]", async () => { });
-  it("Test 3 - 4 : Process maker2's order [fill total]", async () => {});
+  it("Test 3 : Process simultaneously two maker's order,[ 2 WETH + 5000 USDC(MAKER1), 3WETH + 5000USDC(MAKER2) ]", async () => {
+    testSnapShot = await takeSnapshot();
+
+    const [token0, token1] = USDC < WETH ? [USDC, WETH] : [WETH, USDC];
+    const AMOUNT0_1 = parseUnits("5000", 6).toBigInt();
+    const AMOUNT1_1 = parseEther("2").toBigInt();
+
+    [amount0DesiredMaker1, amount1DesiredMaker1] =
+      USDC < WETH ? [AMOUNT0_1, AMOUNT1_1] : [AMOUNT1_1, AMOUNT0_1];
+
+    const AMOUNT0_2 = parseUnits("5000", 6).toBigInt();
+    const AMOUNT1_2 = parseEther("3").toBigInt();
+    [amount0DesiredMaker2, amount1DesiredMaker2] =
+      USDC < WETH ? [AMOUNT0_2, AMOUNT1_2] : [AMOUNT1_2, AMOUNT0_2];
+    const _pool = await ethers.getContractAt("IUniswapV3PoolImmutables", POOL);
+    const slot0 = await pool.slot0();
+    const tickSpacing = await _pool.tickSpacing();
+    const currentTick =
+      BigInt(Math.floor(Number(slot0.tick / tickSpacing))) *
+      BigInt(tickSpacing);
+    lowerTick = currentTick - BigInt(tickSpacing) * 5n;
+    upperTick = currentTick + BigInt(tickSpacing) * 10n;
+
+    const { isMakingZero: isMakingZero1, makingAmount: _makingAmount1 } =
+      await getMakingAmount({
+        tickLower: lowerTick,
+        tickUpper: upperTick,
+        factoryAddr: FACTORY,
+        token0,
+        token1,
+        fee: FEE,
+        amount0Desired: amount0DesiredMaker1,
+        amount1Desired: amount1DesiredMaker1,
+      });
+
+    const { isMakingZero: isMakingZero2, makingAmount: _makingAmount2 } =
+      await getMakingAmount({
+        tickLower: lowerTick,
+        tickUpper: upperTick,
+        factoryAddr: FACTORY,
+        token0,
+        token1,
+        fee: FEE,
+        amount0Desired: amount0DesiredMaker2,
+        amount1Desired: amount1DesiredMaker2,
+      });
+    makingAmount1 = _makingAmount1;
+    makingAmount2 = _makingAmount2;
+
+    expect(isMakingZero1).to.equal(false);
+    expect(formatUnits(makingAmount1, 6)).to.equal("1858.104999"); // 1858.104999 USDC need to swap to WETH
+    expect(isMakingZero2).to.equal(false);
+    expect(formatUnits(makingAmount2, 6)).to.equal("1185.640521"); // 1185.640521 USDC need to swap to WETH
+
+    [baseAmountDesired1, quoteAmountDesired1] = isMakingZero1
+      ? [amount0DesiredMaker1, amount1DesiredMaker1]
+      : [amount1DesiredMaker1, amount0DesiredMaker1];
+
+    [baseAmountDesired2, quoteAmountDesired2] = isMakingZero2
+      ? [amount0DesiredMaker2, amount1DesiredMaker2]
+      : [amount1DesiredMaker2, amount0DesiredMaker2];
+    [makeToken, takeToken] = isMakingZero1 // isMakingZero1 === isMakingZero2
+      ? [token0, token1]
+      : [token1, token0];
+    expect(baseAmountDesired1).to.equal(parseUnits("5000", 6).toBigInt());
+    expect(quoteAmountDesired1).to.equal(parseEther("2").toBigInt());
+    expect(baseAmountDesired2).to.equal(parseUnits("5000", 6).toBigInt());
+    expect(quoteAmountDesired2).to.equal(parseEther("3").toBigInt());
+
+    await approveMax(WETH, toaster.address, maker1.address);
+    await approveMax(USDC, toaster.address, maker1.address);
+    await approveMax(WETH, toaster.address, maker2.address);
+    await approveMax(USDC, toaster.address, maker2.address);
+  });
+
+  it("Test 3 - 1 : Process maker1's order [fill partial: + 858.104999 USDC ]", async () => {
+    const MAKING = parseUnits("858.104999", 6).toBigInt();
+    const TAKING = (MAKING * 10n ** 18n) / USDC_WETH_RATIO;
+
+    const encoder = new AbiCoder();
+
+    const interactionData = encoder.encode(
+      ["address", "address", "uint256", "uint256", "uint24", "int24", "int24"],
+      [
+        makeToken,
+        takeToken,
+        baseAmountDesired1,
+        quoteAmountDesired1,
+        FEE,
+        lowerTick,
+        upperTick,
+      ]
+    );
+
+    //mock fill
+    const mockOrderHash = hexZeroPad("0x1", 32);
+    await IERC20__factory.connect(WETH, taker).transfer(
+      toaster.address,
+      TAKING
+    );
+
+    await toaster
+      .connect(taker)
+      .fillOrderPostInteraction(
+        mockOrderHash,
+        maker1.address,
+        taker.address,
+        MAKING,
+        TAKING,
+        parseUnits("1000", 6),
+        interactionData
+      )
+      .then((t) => t.wait());
+  });
+  it("Test 3 - 2 : Process maker2's order [fill partial + 185.640521 USDC]", async () => {
+    const MAKING = parseUnits("185.640521", 6).toBigInt();
+    const TAKING = (MAKING * 10n ** 18n) / USDC_WETH_RATIO;
+
+    const encoder = new AbiCoder();
+
+    const interactionData = encoder.encode(
+      ["address", "address", "uint256", "uint256", "uint24", "int24", "int24"],
+      [
+        makeToken,
+        takeToken,
+        baseAmountDesired2,
+        quoteAmountDesired2,
+        FEE,
+        lowerTick,
+        upperTick,
+      ]
+    );
+
+    //mock fill
+    const mockOrderHash = hexZeroPad("0x2", 32);
+    await IERC20__factory.connect(WETH, taker).transfer(
+      toaster.address,
+      TAKING
+    );
+    await toaster
+      .connect(taker)
+      .fillOrderPostInteraction(
+        mockOrderHash,
+        maker2.address,
+        taker.address,
+        MAKING,
+        TAKING,
+        parseUnits("1000", 6),
+        interactionData
+      )
+      .then((t) => t.wait());
+  });
+  it("Test 3 - 3 : Process maker1's order [fill total + 1000USDC]", async () => {
+
+    const MAKING = parseUnits("1000",6).toBigInt();
+    const TAKING = (MAKING *  10n ** 18n) / USDC_WETH_RATIO;
+
+    const encoder = new AbiCoder();
+
+    const interactionData = encoder.encode(
+      ["address", "address", "uint256", "uint256", "uint24", "int24", "int24"],
+      [
+        makeToken,
+        takeToken,
+        baseAmountDesired1,
+        quoteAmountDesired1,
+        FEE,
+        lowerTick,
+        upperTick,
+      ]
+    );
+
+    //mock fill
+    const mockOrderHash = hexZeroPad("0x1", 32);
+    await IERC20__factory.connect(WETH, taker).transfer(
+      toaster.address,
+      TAKING
+    );
+
+    const [amount0Success, amount1Success] = await toaster
+      .connect(taker)
+      .fillOrderPostInteraction(
+        mockOrderHash,
+        maker1.address,
+        taker.address,
+        MAKING,
+        TAKING,
+        0n,
+        interactionData
+      )
+      .then((t) => t.wait())
+      .then(
+        (r) => r.logs.filter((log) => log.topics[0] === MINT_EVENT_SIGNATURE)[0]
+      )
+      .then((mintLog) => splitHash(mintLog.data))
+      .then((data) => [data[2], data[3]]);
+    
+    expect(formatUnits(amount0Success, 18)).to.be.eq("2.989656368858651094");
+    expect(formatUnits(amount1Success, 6)).to.be.eq("3138.333431");
+   });
+  it("Test 3 - 4 : Process maker2's order [fill total + 1000USDC] ", async () => {
+    const MAKING = parseUnits("1000", 6).toBigInt();
+    const TAKING = (MAKING * 10n ** 18n) / USDC_WETH_RATIO;
+
+    const encoder = new AbiCoder();
+
+    const interactionData = encoder.encode(
+      ["address", "address", "uint256", "uint256", "uint24", "int24", "int24"],
+      [
+        makeToken,
+        takeToken,
+        baseAmountDesired2,
+        quoteAmountDesired2,
+        FEE,
+        lowerTick,
+        upperTick,
+      ]
+    );
+
+    //mock fill
+    const mockOrderHash = hexZeroPad("0x2", 32);
+    await IERC20__factory.connect(WETH, taker).transfer(
+      toaster.address,
+      TAKING
+    );
+
+    // const [amount0Success, amount1Success] =
+    const[amount0Success, amount1Success]= await toaster
+      .connect(taker)
+      .fillOrderPostInteraction(
+        mockOrderHash,
+        maker2.address,
+        taker.address,
+        MAKING,
+        TAKING,
+        0n,
+        interactionData
+      )
+      .then((t) => t.wait())
+      .then(
+        (r) => r.logs.filter((log) => log.topics[0] === MINT_EVENT_SIGNATURE)[0]
+      )
+      .then((mintLog) => splitHash(mintLog.data))
+      .then((data) => [data[2], data[3]]);
+      
+    expect(formatUnits(amount0Success, 18)).to.be.eq("3.631491058264037122");
+    expect(formatUnits(amount1Success, 6)).to.be.eq("3812.086871");
+  });
 });
