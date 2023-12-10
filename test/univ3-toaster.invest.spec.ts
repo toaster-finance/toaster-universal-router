@@ -592,7 +592,7 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
       )
       .then((t) => t.wait());
   });
-  it("Test 3 - 3 : Process maker1's order [fill total + 1000USDC]", async () => {
+  it("Test 3 - 3 : Process maker1's order [fill fully + 1000USDC]", async () => {
 
     const MAKING = parseUnits("1000",6).toBigInt();
     const TAKING = (MAKING *  10n ** 18n) / USDC_WETH_RATIO;
@@ -640,7 +640,7 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
     expect(formatUnits(amount0Success, 18)).to.be.eq("2.989656368858651094");
     expect(formatUnits(amount1Success, 6)).to.be.eq("3138.333431");
    });
-  it("Test 3 - 4 : Process maker2's order [fill total + 1000USDC] ", async () => {
+  it("Test 3 - 4 : Process maker2's order [fill fully + 1000USDC] ", async () => {
     const MAKING = parseUnits("1000", 6).toBigInt();
     const TAKING = (MAKING * 10n ** 18n) / USDC_WETH_RATIO;
 

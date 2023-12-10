@@ -10,9 +10,10 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SqrtPriceMath} from "../external/uniswapv3/libraries/SqrtPriceMath.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {TickMath} from "../external/uniswapv3/libraries/TickMath.sol";
 import {WETH9} from "../token/WETH9.sol";
-
+import {IERC721Permit,IERC721} from "../token/IERC721Permit.sol";
 struct Order {
         uint256 salt;
         address makerAsset;
@@ -33,7 +34,7 @@ struct Order {
         // bytes postInteraction;
         bytes interactions; // concat(makerAssetData, takerAssetData, getMakingAmount, getTakingAmount, predicate, permit, preIntercation, postInteraction)
 }
-contract UniV3Toaster is IPostInteractionNotificationReceiver{
+contract UniV3Toaster is IPostInteractionNotificationReceiver,Ownable{
     using Math for uint256;
     uint256 constant Q96 = 1 << 96;
     uint256 constant Q192 = 1 << 192;
@@ -44,8 +45,10 @@ contract UniV3Toaster is IPostInteractionNotificationReceiver{
     IUniswapV3Factory immutable public factory;
     WETH9 immutable public WETH;
     address immutable public oneInch;
-    
-    
+    uint256 public protocolFee;
+
+    event CancelInvest(bytes32 indexed orderHash,Order order);
+
     struct ActualAmountCache {
         uint256 baseAmount; // : baseAmountDesired - makingAmount
         uint256 quoteAmount; // : quoteAmountDesired + (takingAmount)
@@ -61,7 +64,7 @@ contract UniV3Toaster is IPostInteractionNotificationReceiver{
         int24 tickLower;
         int24 tickUpper;
     } 
-    constructor(address _manager,address _oneInch) {
+    constructor(address _manager,address _oneInch) Ownable(msg.sender){
         manager = INonfungiblePositionManager(_manager);
         factory = IUniswapV3Factory(IPeripheryImmutableState(_manager).factory());
         WETH = WETH9(payable(IPeripheryImmutableState(_manager).WETH9()));
@@ -162,23 +165,73 @@ contract UniV3Toaster is IPostInteractionNotificationReceiver{
         
     }
 
-    // function cancelOrder(Order order,bytes32 orderHash,address token) external {
-    //     require(order.maker == msg.sender,"INVALID_MAKER");
-    //     balances[order][msg.sender] = 0;
-    // }
+    function cancelInvest(Order memory order,bytes32 orderHash) external {
+        require(order.maker == msg.sender,"INVALID_MAKER");
+        uint _makerAmount = making[orderHash][order.makerAsset];
+        uint _takerAmount = taking[orderHash][order.takerAsset];
+        making[orderHash][order.makerAsset] = 0;
+        taking[orderHash][order.takerAsset] = 0;
 
-    // function compoundFee(
-    //     uint8 v,
-    //     bytes32 r,
-    //     bytes32 s
-    // )
+        IERC20(order.makerAsset).transfer(order.maker,_makerAmount);
+        IERC20(order.takerAsset).transfer(order.maker,_takerAmount);
 
-    // function rebalancing(
-    //     uint8 v,
-    //     bytes32 r,
-    //     bytes32 s
-    // )
+        emit CancelInvest(orderHash,order);
+    }
+
+    //keccak256("Permit(address spender,uint256 tokenId,uint256 nonce,uint256 deadline)")
+    function harvestAndInvest(
+        uint256 tokenId,
+        address user,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external {
+        IERC721Permit(address(manager)).permit(address(this),tokenId,block.timestamp,v,r,s);
+        IERC721(address(manager)).safeTransferFrom(user,address(this),tokenId);
+        (uint collectAmount0, uint collectAmount1)= manager.collect(INonfungiblePositionManager.CollectParams({
+            tokenId:tokenId,
+            recipient: user,
+            amount0Max: type(uint128).max,
+            amount1Max: type(uint128).max
+        }));
+
+        // rebalance ? 
+
+        IERC721(address(manager)).safeTransferFrom(address(this),user,tokenId);
+
+    }
+    
+    function rebalancing(
+       uint256 tokenId,
+       address user,
+       uint8 v,
+       bytes32 r,
+       bytes32 s
+    ) external {
+        IERC721Permit(address(manager)).permit(address(this),tokenId,block.timestamp,v,r,s);
+        IERC721(address(manager)).safeTransferFrom(user,address(this),tokenId);
+        manager.decreaseLiquidity(INonfungiblePositionManager.DecreaseLiquidityParams({
+            tokenId:tokenId,
+            liquidity:type(uint128).max,
+            amount0Min: 0,
+            amount1Min: 0,
+            deadline:block.timestamp
+        }));
+
+        (uint collectAmount0, uint collectAmount1)= manager.collect(INonfungiblePositionManager.CollectParams({
+            tokenId:tokenId,
+            recipient: user,
+            amount0Max: type(uint128).max,
+            amount1Max: type(uint128).max
+        }));
+
+        // rebalance ?
+        
+        IERC721(address(manager)).safeTransferFrom(address(this),user,tokenId);
+    }
 
 
-    // function setProtocolFee(uint256 fee) external onlyOwner {}
+    function setProtocolFee(uint256 _fee) external onlyOwner {
+        protocolFee = _fee;
+    }
 }
