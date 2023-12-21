@@ -112,7 +112,7 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
     });
 
     expect(isMakingZero).to.equal(true);
-    expect(formatEther(makingAmount)).to.equal("2.189068064621210236"); // 5303.527731 USDC need to swap to WETH
+    expect(formatEther(makingAmount)).to.equal("2.189068064621210236"); // 2.189068064621210236WETH need to swap to USDC
 
     [makeToken, takeToken] = isMakingZero ? [token0, token1] : [token1, token0];
     [baseAmountDesired, quoteAmountDesired] = isMakingZero
@@ -137,15 +137,25 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
     const encoder = new AbiCoder();
 
     const interactionData = encoder.encode(
-      ["address", "address", "uint256", "uint256", "uint24", "int24", "int24"],
       [
+        "bool",
+        "address",
+        "address",
+        "uint24",
+        "int24",
+        "int24",
+        "uint256",
+        "uint256",
+      ],
+      [
+        false,
         makeToken,
         takeToken,
-        baseAmountDesired,
-        quoteAmountDesired,
         FEE,
         lowerTick,
         upperTick,
+        baseAmountDesired,
+        quoteAmountDesired,
       ]
     );
     const mockOrderHash = hexZeroPad("0x", 32);
@@ -177,15 +187,25 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
     const MAKING = parseEther("1").toBigInt();
     const TAKING = (MAKING * USDC_WETH_RATIO) / 10n ** 18n;
     const interactionData = encoder.encode(
-      ["address", "address", "uint256", "uint256", "uint24", "int24", "int24"],
       [
+        "bool",
+        "address",
+        "address",
+        "uint24",
+        "int24",
+        "int24",
+        "uint256",
+        "uint256",
+      ],
+      [
+        false,
         makeToken,
         takeToken,
-        baseAmountDesired,
-        quoteAmountDesired,
         FEE,
         lowerTick,
         upperTick,
+        baseAmountDesired,
+        quoteAmountDesired,
       ]
     );
     const mockOrderHash = hexZeroPad("0x", 32);
@@ -214,15 +234,25 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
     const encoder = new AbiCoder();
 
     const interactionData = encoder.encode(
-      ["address", "address", "uint256", "uint256", "uint24", "int24", "int24"],
       [
+        "bool",
+        "address",
+        "address",
+        "uint24",
+        "int24",
+        "int24",
+        "uint256",
+        "uint256",
+      ],
+      [
+        false,
         makeToken,
         takeToken,
-        baseAmountDesired,
-        quoteAmountDesired,
         FEE,
         lowerTick,
         upperTick,
+        baseAmountDesired,
+        quoteAmountDesired,
       ]
     );
     const mockOrderHash = hexZeroPad("0x", 32);
@@ -248,8 +278,8 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
       .then((mintLog) => splitHash(mintLog.data))
       .then((data) => [data[2], data[3]]);
     
-    expect(formatEther(amount0Success)).to.be.eq("2.810898311810595642");
-    expect(formatUnits(amount1Success, 6)).to.be.eq("14110.030956");
+    expect(formatEther(amount0Success)).to.be.eq("2.810898312009808415");
+    expect(formatUnits(amount1Success, 6)).to.be.eq("14110.030957");
 
     await testSnapShot.restore();
   
@@ -311,15 +341,25 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
     const encoder = new AbiCoder();
 
     const interactionData = encoder.encode(
-      ["address", "address", "uint256", "uint256", "uint24", "int24", "int24"],
       [
+        "bool",
+        "address",
+        "address",
+        "uint24",
+        "int24",
+        "int24",
+        "uint256",
+        "uint256",
+      ],
+      [
+        false,
         makeToken,
         takeToken,
-        baseAmountDesired,
-        quoteAmountDesired,
         FEE,
         lowerTick,
         upperTick,
+        baseAmountDesired,
+        quoteAmountDesired,
       ]
     );
     const mockOrderHash = hexZeroPad("0x", 32);
@@ -348,15 +388,25 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
     const MAKING = parseUnits("500", 6).toBigInt();
     const TAKING = (MAKING * 10n ** 18n) / USDC_WETH_RATIO;
     const interactionData = encoder.encode(
-      ["address", "address", "uint256", "uint256", "uint24", "int24", "int24"],
       [
+        "bool",
+        "address",
+        "address",
+        "uint24",
+        "int24",
+        "int24",
+        "uint256",
+        "uint256",
+      ],
+      [
+        false,
         makeToken,
         takeToken,
-        baseAmountDesired,
-        quoteAmountDesired,
         FEE,
         lowerTick,
         upperTick,
+        baseAmountDesired,
+        quoteAmountDesired,
       ]
     );
     const mockOrderHash = hexZeroPad("0x", 32);
@@ -383,15 +433,25 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
     const encoder = new AbiCoder();
 
     const interactionData = encoder.encode(
-      ["address", "address", "uint256", "uint256", "uint24", "int24", "int24"],
       [
+        "bool",
+        "address",
+        "address",
+        "uint24",
+        "int24",
+        "int24",
+        "uint256",
+        "uint256",
+      ],
+      [
+        false,
         makeToken,
         takeToken,
-        baseAmountDesired,
-        quoteAmountDesired,
         FEE,
         lowerTick,
         upperTick,
+        baseAmountDesired,
+        quoteAmountDesired,
       ]
     );
     const mockOrderHash = hexZeroPad("0x", 32);
@@ -417,8 +477,8 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
       .then((mintLog) => splitHash(mintLog.data))
       .then((data) => [data[2], data[3]]);
     
-    expect(formatEther(amount0Success)).to.be.eq("6.220482221573658624");
-    expect(formatUnits(amount1Success, 6)).to.be.eq("7708.575699");
+    expect(formatEther(amount0Success)).to.be.eq("6.220432104757797925");
+    expect(formatUnits(amount1Success, 6)).to.be.eq("7708.513593");
 
     await testSnapShot.restore();
   
@@ -522,15 +582,25 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
     const encoder = new AbiCoder();
 
     const interactionData = encoder.encode(
-      ["address", "address", "uint256", "uint256", "uint24", "int24", "int24"],
       [
+        "bool",
+        "address",
+        "address",
+        "uint24",
+        "int24",
+        "int24",
+        "uint256",
+        "uint256",
+      ],
+      [
+        false,
         makeToken,
         takeToken,
-        baseAmountDesired1,
-        quoteAmountDesired1,
         FEE,
         lowerTick,
         upperTick,
+        baseAmountDesired1,
+        quoteAmountDesired1,
       ]
     );
 
@@ -561,15 +631,16 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
     const encoder = new AbiCoder();
 
     const interactionData = encoder.encode(
-      ["address", "address", "uint256", "uint256", "uint24", "int24", "int24"],
+      ["bool","address", "address","uint24", "int24", "int24","uint256", "uint256"],
       [
+        false,
         makeToken,
         takeToken,
-        baseAmountDesired2,
-        quoteAmountDesired2,
         FEE,
         lowerTick,
         upperTick,
+        baseAmountDesired2,
+        quoteAmountDesired2,
       ]
     );
 
@@ -600,15 +671,25 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
     const encoder = new AbiCoder();
 
     const interactionData = encoder.encode(
-      ["address", "address", "uint256", "uint256", "uint24", "int24", "int24"],
       [
+        "bool",
+        "address",
+        "address",
+        "uint24",
+        "int24",
+        "int24",
+        "uint256",
+        "uint256",
+      ],
+      [
+        false,
         makeToken,
         takeToken,
-        baseAmountDesired1,
-        quoteAmountDesired1,
         FEE,
         lowerTick,
         upperTick,
+        baseAmountDesired1,
+        quoteAmountDesired1,
       ]
     );
 
@@ -637,8 +718,8 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
       .then((mintLog) => splitHash(mintLog.data))
       .then((data) => [data[2], data[3]]);
     
-    expect(formatUnits(amount0Success, 18)).to.be.eq("2.989656368858651094");
-    expect(formatUnits(amount1Success, 6)).to.be.eq("3138.333431");
+    expect(formatUnits(amount0Success, 18)).to.be.eq("2.989656369122870096");
+    expect(formatUnits(amount1Success, 6)).to.be.eq("3138.333432");
    });
   it("Test 3 - 4 : Process maker2's order [fill fully + 1000USDC] ", async () => {
     const MAKING = parseUnits("1000", 6).toBigInt();
@@ -647,15 +728,25 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
     const encoder = new AbiCoder();
 
     const interactionData = encoder.encode(
-      ["address", "address", "uint256", "uint256", "uint24", "int24", "int24"],
       [
+        "bool",
+        "address",
+        "address",
+        "uint24",
+        "int24",
+        "int24",
+        "uint256",
+        "uint256",
+      ],
+      [
+        false,
         makeToken,
         takeToken,
-        baseAmountDesired2,
-        quoteAmountDesired2,
         FEE,
         lowerTick,
         upperTick,
+        baseAmountDesired2,
+        quoteAmountDesired2,
       ]
     );
 
@@ -685,7 +776,7 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
       .then((mintLog) => splitHash(mintLog.data))
       .then((data) => [data[2], data[3]]);
       
-    expect(formatUnits(amount0Success, 18)).to.be.eq("3.631491058264037122");
-    expect(formatUnits(amount1Success, 6)).to.be.eq("3812.086871");
+    expect(formatUnits(amount0Success, 18)).to.be.eq("3.631491058755721057");
+    expect(formatUnits(amount1Success, 6)).to.be.eq("3812.086872");
   });
 });

@@ -166,7 +166,7 @@ export const doExactInput = async (
   const [signer] = await ethers.getSigners();
   await approveMax(tokenIn, routerAddr);
   
-  return router.exactOutputSingle({
+  return router.exactInputSingle({
     tokenIn,
     tokenOut,
     fee: 3000,
