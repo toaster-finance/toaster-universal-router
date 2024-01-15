@@ -20,7 +20,7 @@ describe("Uniswap V3 Toaster Compound", () => {
     let toaster: UniV3FusionToaster;
     let maker: SignerWithAddress;
     let positionManager:INonfungiblePositionManager;
-    const {MANAGER,FEE,FUSION,USDC,WETH,ROUTER} = ADDRESS;
+    const {MANAGER,FEE,FUSION,USDC,WETH,ROUTER,MENU} = ADDRESS;
     before("Fork Arbitrum Mainnet & Deploy toaster & Tokens setup", async() => {
       // Fork Arbitrum Mainnet
       await reset(URL, BLOCKNUMBER);
@@ -53,7 +53,7 @@ describe("Uniswap V3 Toaster Compound", () => {
     
         await mine(1);
         // Check Position
-        const {amount0:fee0,amount1:fee1}  =await positionManager.callStatic.collect({
+        const {amount0:fee0,amount1:fee1}  = await positionManager.callStatic.collect({
           tokenId: tokenId,
           recipient: maker.address,
           amount0Max: MAX_UINT128,
