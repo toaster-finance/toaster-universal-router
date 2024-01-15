@@ -6,31 +6,21 @@ import { parseEther, parseUnits } from "ethers/lib/utils";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
 import { approveMax, doExactInput, doExactOutput, getBalance } from "../utils/erc20";
+import { ADDRESS } from "./const/address.const";
+import { RESET } from "./const/reset.const";
+import { TICK } from "./const/tick.const";
+import { EVENT_SIGNATURE } from "./const/signature.const";
 
 
 const MAX_UINT128 = 2n**128n - 1n;
-const ALKEMY_KEY = process.env.ALCHEMY_KEY;
-const URL =
-  `https://arb-mainnet.g.alchemy.com/v2/${ALKEMY_KEY}`;
-const BLOCKNUMBER = 151396608;
-const WETH = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
-const USDC = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
-const FEE = 3000n;
-const POOL = "0xc473e2aEE3441BF9240Be85eb122aBB059A3B57c";
-const ROUTER = "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45";
-const MANAGER = "0xC36442b4a4522E871399CD717aBDD847Ab11FE88";
-const FUSION = "0x1111111254EEB25477B68fb85Ed929f73A960582";
-const MINT_EVENT_SIGNATURE =
-    "0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde";
-const INCREASE_LIQUIDITY_EVENT_SIGNATURE =
-    "0x3067048beee31b25b2f1681f88dac838c8bba36af25bfb2b7cf7473a5847e35f";
-const FACTORY = "0x1F98431c8aD98523631AE4a59f267346ea31F984";
-const MAX_TICK = 887272n;
-const MIN_TICK = -887272n;
+const {URL,BLOCKNUMBER} = RESET
+const {MAX_TICK,MIN_TICK} = TICK
+const {INCREASE_LIQUIDITY_EVENT_SIGNATURE} = EVENT_SIGNATURE
 describe("Uniswap V3 Toaster Compound", () => {
     let toaster: UniV3FusionToaster;
     let maker: SignerWithAddress;
     let positionManager:INonfungiblePositionManager;
+    const {MANAGER,FEE,FUSION,USDC,WETH,ROUTER} = ADDRESS;
     before("Fork Arbitrum Mainnet & Deploy toaster & Tokens setup", async() => {
       // Fork Arbitrum Mainnet
       await reset(URL, BLOCKNUMBER);
@@ -80,6 +70,7 @@ describe("Uniswap V3 Toaster Compound", () => {
     });
     it("Make Order for Compounding Fee", () => {
       // Calculating Amount 
+
       
     });
     it("Fill Order(partial) by Taker", () => {});

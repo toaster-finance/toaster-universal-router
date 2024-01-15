@@ -9,20 +9,12 @@ import { formatUnits,parseEther,parseUnits,formatEther,AbiCoder,hexZeroPad, spli
 import {  SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { splitHash } from '../utils/event';
 import { getMakingAmount } from '../scripts/getMakingAmount';
-const ALKEMY_KEY = process.env.ALCHEMY_KEY;
-const URL = `https://arb-mainnet.g.alchemy.com/v2/${ALKEMY_KEY}`;
-const BLOCKNUMBER = 151396608;
-const WETH = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
-const USDC = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
-const FEE= 3000n;
-const POOL = "0xc473e2aEE3441BF9240Be85eb122aBB059A3B57c";
-const ROUTER = "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45";
-const MANAGER = "0xC36442b4a4522E871399CD717aBDD847Ab11FE88";
-const FUSION = "0x1111111254EEB25477B68fb85Ed929f73A960582";
-const MINT_EVENT_SIGNATURE =
-  "0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde";
-const FACTORY = "0x1F98431c8aD98523631AE4a59f267346ea31F984";
+import { ADDRESS } from './const/address.const';
+import { RESET } from './const/reset.const';
+import { EVENT_SIGNATURE } from './const/signature.const';
 
+const { MINT_EVENT_SIGNATURE } = EVENT_SIGNATURE;
+const {URL,BLOCKNUMBER} = RESET;
 describe("Univ3FusionToaster: Invest 5 WETH, 10000USDC", () => { 
     let toaster: UniV3FusionToaster;
     let pool: IUniswapV3PoolState;
@@ -42,7 +34,7 @@ describe("Univ3FusionToaster: Invest 5 WETH, 10000USDC", () => {
     let maker2: SignerWithAddress;
     let taker: SignerWithAddress;
     let testSnapShot: SnapshotRestorer;
-   
+    const { MANAGER, FEE, FUSION, USDC, WETH,POOL,ROUTER, FACTORY} = ADDRESS;
     before("Fork Arbitrum Mainnet & Deploy toaster", async () => {
       await reset(URL, BLOCKNUMBER);
 

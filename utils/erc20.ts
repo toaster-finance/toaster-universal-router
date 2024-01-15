@@ -132,10 +132,10 @@ export const getBalance = async (tokenAddr: string,owner?:string) :Promise<BigNu
   return token.balanceOf(signer.address);
 };
 export const doExactOutput = async (
-  tokenIn: `0x${string}`,
-  tokenOut: `0x${string}`,
+  tokenIn: string,
+  tokenOut: string,
   amountOut: bigint,
-  routerAddr: `0x${string}`,
+  routerAddr: string,
   to? : string
 ) => {
 
@@ -156,10 +156,10 @@ export const doExactOutput = async (
 };
 
 export const doExactInput = async (
-  tokenIn: `0x${string}`,
-  tokenOut: `0x${string}`,
+  tokenIn: string,
+  tokenOut: string,
   amountIn: bigint,
-  routerAddr: `0x${string}`,
+  routerAddr: string,
   to?: string
 ) => {
   const router = await ethers.getContractAt(ROUTER_ABI, routerAddr);
