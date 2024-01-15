@@ -88,16 +88,16 @@ contract UniV3FusionToaster is IPostInteractionNotificationReceiver,IPreInteract
      * @param takingAmount takingAmount
      * @param remainingAmount remainingAmount
      * @param interactionData introduction data
-     * @dev interactionData = abi.encode(isHarvest,baseToken, quoteToken, fee, tickLower, tickUpper, baseAmountDesired, quoteAmountDesired,) or abi.encode(isHarvest,tokenId,makerAsset,baseAmountDesired, quoteAmountDesired)
+     * @dev interactionData = abi.encode(isCompound,baseToken, quoteToken, fee, tickLower, tickUpper, baseAmountDesired, quoteAmountDesired,) or abi.encode(isHarvest,tokenId,makerAsset,baseAmountDesired, quoteAmountDesired)
      * if user want to invest 5 WETH & 1000 USDC, baseAmountDesired = 5 WETH, quoteAmountDesired = 1000 USDC
      */
     function fillOrderPostInteraction(bytes32 orderHash, address maker, address, uint256 makingAmount, uint256 takingAmount, uint256 remainingAmount, bytes memory interactionData) override external {
         
-        (bool isHarvest) = abi.decode(interactionData, (bool));
-        if(!isHarvest) {
+        (bool isCompund) = abi.decode(interactionData, (bool));
+        if(!isCompund) { // for mint & rebalance order 
             InteractionDataMint memory data;
             ActualAmountCache memory cache;
-            (isHarvest, data.baseToken, data.quoteToken,data.fee, data.tickLower, data.tickUpper,data.baseAmountDesired, data.quoteAmountDesired) = abi.decode(
+            ( , data.baseToken, data.quoteToken,data.fee, data.tickLower, data.tickUpper,data.baseAmountDesired, data.quoteAmountDesired) = abi.decode(
                 interactionData,
                 (bool, address, address, uint24, int24, int24, uint, uint)
             );
@@ -107,7 +107,7 @@ contract UniV3FusionToaster is IPostInteractionNotificationReceiver,IPreInteract
                 making[orderHash][data.baseToken] += makingAmount;
                 return;
             }
-            
+            // if remaining amount = 0, pull token
             uint makingAmountTotal = making[orderHash][data.baseToken] + makingAmount;
             uint takingAmountTotal = taking[orderHash][data.quoteToken] + takingAmount;
             making[orderHash][data.baseToken] = 0;
@@ -123,10 +123,9 @@ contract UniV3FusionToaster is IPostInteractionNotificationReceiver,IPreInteract
                 SafeERC20.forceApprove(IERC20(data.quoteToken), address(manager), data.quoteAmountDesired + takingAmountTotal);
             } 
            
+            // mint position
             {
-
                 (cache.actualAmount0, cache.actualAmount1) = (data.baseToken < data.quoteToken) ? (data.baseAmountDesired - makingAmountTotal,data.quoteAmountDesired + takingAmountTotal) : (data.quoteAmountDesired + takingAmountTotal,data.baseAmountDesired - makingAmountTotal);
-                // mint data 
                 ( , ,cache.amount0Result,cache.amount1Result) = manager.mint(INonfungiblePositionManager.MintParams({
                     token0: (data.baseToken < data.quoteToken) ? data.baseToken: data.quoteToken,
                     token1: (data.baseToken < data.quoteToken) ? data.quoteToken: data.baseToken, 
@@ -147,8 +146,6 @@ contract UniV3FusionToaster is IPostInteractionNotificationReceiver,IPreInteract
 
             // if surplus > 0, return surplus to maker
             if(cache.surplus0 > 0 ) SafeERC20.safeTransfer(IERC20(data.quoteToken < data.baseToken ? data.quoteToken : data.baseToken), maker, cache.surplus0);
-            
-            
             if(cache.surplus1 > 0) SafeERC20.safeTransfer(IERC20(data.quoteToken < data.baseToken ? data.baseToken : data.quoteToken), maker, cache.surplus1);   
             
             
@@ -156,7 +153,7 @@ contract UniV3FusionToaster is IPostInteractionNotificationReceiver,IPreInteract
             SafeERC20.forceApprove(IERC20(data.baseToken), address(manager), 0);
             SafeERC20.forceApprove(IERC20(data.quoteToken), address(manager), 0);
 
-        } else {
+        } else { // for compound order
             InteractionDataIncreaseLiquidity memory data;
             
             ( ,data.tokenId,data.makerAsset,data.baseAmountDesired, data.quoteAmountDesired) = abi.decode(interactionData,(bool,uint256,address,uint256,uint256));
@@ -224,7 +221,7 @@ contract UniV3FusionToaster is IPostInteractionNotificationReceiver,IPreInteract
 
     struct PreInteractionCache {
         uint tokenId;
-        bool isHarvest;
+        bool isCompound;
         uint8 v;
         bytes32 r;
         bytes32 s;
@@ -238,18 +235,18 @@ contract UniV3FusionToaster is IPostInteractionNotificationReceiver,IPreInteract
         uint256 makingAmount,
         uint256 takingAmount,
         uint256 remainingAmount,
-        bytes memory interactionData // abi.encode(tokenId,isHarvest,v,r,s)
+        bytes memory interactionData // abi.encode(isCompound,tokenId,v,r,s)
     ) external {
         PreInteractionCache memory cache;
-        (cache.tokenId,cache.isHarvest,cache.v,cache.r,cache.s)
-        = abi.decode(interactionData,(uint256,bool,uint8,bytes32,bytes32));
+        (cache.isCompound,cache.tokenId,cache.v,cache.r,cache.s)
+        = abi.decode(interactionData,(bool,uint256,uint8,bytes32,bytes32));
         ( , ,address token0,address token1,,,,,,,, )= manager.positions(cache.tokenId);
         
-        if(cache.isHarvest) {
+        if(cache.isCompound) { // for compound order
             (uint collectAmount0, uint collectAmount1) = _harvest(cache.tokenId, maker, cache.v, cache.r, cache.s);
             IERC20(token0).transfer(maker,collectAmount0);
             IERC20(token1).transfer(maker,collectAmount1);
-        } else {
+        } else { // for rebalance order
             (uint withdrawAmount0, uint withdrawAmount1) = _withdrawPosition(cache.tokenId, maker, cache.v, cache.r, cache.s);
             IERC20(token0).transfer(maker,withdrawAmount0);
             IERC20(token1).transfer(maker,withdrawAmount1);

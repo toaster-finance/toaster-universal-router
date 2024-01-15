@@ -10,6 +10,7 @@ import { ADDRESS } from "./const/address.const";
 import { RESET } from "./const/reset.const";
 import { TICK } from "./const/tick.const";
 import { EVENT_SIGNATURE } from "./const/signature.const";
+import { getMakingAmount } from "../scripts/getMakingAmount";
 
 
 const MAX_UINT128 = 2n**128n - 1n;
@@ -20,7 +21,9 @@ describe("Uniswap V3 Toaster Compound", () => {
     let toaster: UniV3FusionToaster;
     let maker: SignerWithAddress;
     let positionManager:INonfungiblePositionManager;
-    const {MANAGER,FEE,FUSION,USDC,WETH,ROUTER} = ADDRESS;
+    let fee0:bigint;
+    let fee1:bigint;
+    const {MANAGER,FEE,FUSION,USDC,WETH,ROUTER,FACTORY} = ADDRESS;
     before("Fork Arbitrum Mainnet & Deploy toaster & Tokens setup", async() => {
       // Fork Arbitrum Mainnet
       await reset(URL, BLOCKNUMBER);
@@ -53,12 +56,14 @@ describe("Uniswap V3 Toaster Compound", () => {
     
         await mine(1);
         // Check Position
-        const {amount0:fee0,amount1:fee1}  = await positionManager.callStatic.collect({
+        const {amount0,amount1}  = await positionManager.callStatic.collect({
           tokenId: tokenId,
           recipient: maker.address,
           amount0Max: MAX_UINT128,
           amount1Max: MAX_UINT128,
         });
+        fee0 = amount0.toBigInt();
+        fee1 = amount1.toBigInt();
     
         expect(fee0).to.equal(165511423513165808854n);
         expect(fee1).to.equal(300383944n);
@@ -67,8 +72,74 @@ describe("Uniswap V3 Toaster Compound", () => {
         expect(await getBalance(WETH)).to.equal(0n);
         expect(await getBalance(USDC)).to.equal(0n);
     });
-    it("Make Order for Compounding Fee", () => {
+    it("Calculating Amount to Swap", () => {
+      getMakingAmount({
+        tickLower: 60n * (MIN_TICK / 60n),
+        tickUpper: 60n * (MAX_TICK / 60n),
+        token0: WETH,
+        token1: USDC,
+        fee: FEE,
+        factoryAddr:FACTORY,
+        amount0Desired: fee0,
+        amount1Desired: fee1,
+      })
+    })
+  // name: 'Uniswap V3 Positions NFT-V1', version: 'UNI-V3-POS', chainId: 42161, verifyingContract: MANAGER
+    it("Make Order for Compounding Fee",async () => {
       // Calculating Amount 
+      const [maker] = await ethers.getSigners();
+      const nonce = await ethers.getContractAt("INonfungiblePositionManager", MANAGER).nonces(maker.address)
+      const domain = {
+        "name": "Uniswap V3 Positions NFT-V1",
+        "version": "UNI-V3-POS",
+        "chainId": 42161,
+        "verifyingContract": MANAGER};
+
+      const types = {
+        "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+        "Permit": [
+            {   
+              "name": "spender",
+              "type": "address"
+            },
+            {
+              "name": "tokenId",
+              "type": "uint256"
+            },
+            {
+              "name": "nonce",
+              "type": "uint256"
+            },
+            {
+              "name": "deadline",
+              "type": "uint256"
+            }
+        ],
+      };  
+      const value = {
+        "spender":toaster.address,
+        "tokenId":963380,
+        "nonce":0,
+        "deadline":ethers.constants.MaxUint256
+      };
+      maker._signTypedData(domain, types, value)
       
       
     });
