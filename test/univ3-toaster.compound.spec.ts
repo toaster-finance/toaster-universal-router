@@ -1,5 +1,5 @@
 import { mine, reset, setBalance } from "@nomicfoundation/hardhat-network-helpers";
-import { INonfungiblePositionManager, UniV3Toaster } from "../typechain-types";
+import { INonfungiblePositionManager, UniV3FusionToaster } from "../typechain-types";
 import { ethers } from "hardhat";
 import { burn, deposit } from "../utils/weth";
 import { parseEther, parseUnits } from "ethers/lib/utils";
@@ -9,7 +9,9 @@ import { approveMax, doExactInput, doExactOutput, getBalance } from "../utils/er
 
 
 const MAX_UINT128 = 2n**128n - 1n;
-const URL = "https://arbitrum.llamarpc.com";
+const ALKEMY_KEY = process.env.ALCHEMY_KEY;
+const URL =
+  `https://arb-mainnet.g.alchemy.com/v2/${ALKEMY_KEY}`;
 const BLOCKNUMBER = 151396608;
 const WETH = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
 const USDC = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
@@ -26,7 +28,7 @@ const FACTORY = "0x1F98431c8aD98523631AE4a59f267346ea31F984";
 const MAX_TICK = 887272n;
 const MIN_TICK = -887272n;
 describe("Uniswap V3 Toaster Compound", () => {
-    let toaster: UniV3Toaster;
+    let toaster: UniV3FusionToaster;
     let maker: SignerWithAddress;
     let positionManager:INonfungiblePositionManager;
     before("Fork Arbitrum Mainnet & Deploy toaster & Tokens setup", async() => {
@@ -36,7 +38,7 @@ describe("Uniswap V3 Toaster Compound", () => {
 
       // Deploy toaster
       toaster = await ethers
-        .getContractFactory("UniV3Toaster")
+        .getContractFactory("UniV3FusionToaster")
         .then((factory) => factory.deploy(MANAGER, FUSION));
         
       positionManager = await ethers.getContractAt("INonfungiblePositionManager", MANAGER);
@@ -78,6 +80,7 @@ describe("Uniswap V3 Toaster Compound", () => {
     });
     it("Make Order for Compounding Fee", () => {
       // Calculating Amount 
+      
     });
     it("Fill Order(partial) by Taker", () => {});
     it("Fill Order(fully) by Taker", () => {});

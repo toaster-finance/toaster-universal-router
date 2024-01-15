@@ -15,7 +15,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {TickMath} from "../../external/uniswapv3/libraries/TickMath.sol";
 import {WETH9} from "../../token/WETH9.sol";
 import {IERC721Permit,IERC721} from "../../token/IERC721Permit.sol";
-import "hardhat/console.sol";
+
 struct Order {
         uint256 salt;
         address makerAsset;
@@ -36,7 +36,7 @@ struct Order {
         // bytes postInteraction;
         bytes interactions; // concat(makerAssetData, takerAssetData, getMakingAmount, getTakingAmount, predicate, permit, preIntercation, postInteraction)
 }
-contract UniV3Toaster is IPostInteractionNotificationReceiver,IPreInteractionNotificationReceiver,Ownable{
+contract UniV3FusionToaster is IPostInteractionNotificationReceiver,IPreInteractionNotificationReceiver,Ownable{
     using Math for uint256;
     uint256 constant Q96 = 1 << 96;
     uint256 constant Q192 = 1 << 192;

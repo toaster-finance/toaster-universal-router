@@ -3,11 +3,6 @@ import "@nomicfoundation/hardhat-toolbox";
 import "@nomiclabs/hardhat-ethers";
 import dotenv from "dotenv";
 dotenv.config();
-const URL = "https://arbitrum.llamarpc.com";
-const BLOCKNUMBER = 151396608;
-const DEPLOY = process.env.DEPLOY!;
-const AR = process.env.ARBITRUM_KEY!;
-const KEY2 = process.env.KEY2!;
 const config: HardhatUserConfig = {
   solidity: {
     compilers: [

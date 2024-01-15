@@ -2,14 +2,15 @@ import { IERC20 } from './../typechain-types/@openzeppelin/contracts/token/ERC20
 import { deposit, depositAndTransferTo } from './../utils/weth';
 import { expect } from 'chai';
 import { ethers} from "hardhat";
-import { IERC20__factory, IUniswapV3PoolState, UniV3Toaster} from "../typechain-types";
+import { IERC20__factory, IUniswapV3PoolState, UniV3FusionToaster} from "../typechain-types";
 import { approveMax, getBalance, doExactOutput, doExactInput } from "../utils/erc20";
 import { SnapshotRestorer, impersonateAccount, reset, setBalance, takeSnapshot } from "@nomicfoundation/hardhat-network-helpers";
 import { formatUnits,parseEther,parseUnits,formatEther,AbiCoder,hexZeroPad, splitSignature, hexlify } from 'ethers/lib/utils';
 import {  SignerWithAddress } from '@nomicfoundation/hardhat-ethers/signers';
 import { splitHash } from '../utils/event';
 import { getMakingAmount } from '../scripts/getMakingAmount';
-const URL = "https://arbitrum.llamarpc.com";
+const ALKEMY_KEY = process.env.ALCHEMY_KEY;
+const URL = `https://arb-mainnet.g.alchemy.com/v2/${ALKEMY_KEY}`;
 const BLOCKNUMBER = 151396608;
 const WETH = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
 const USDC = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
@@ -22,8 +23,8 @@ const MINT_EVENT_SIGNATURE =
   "0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde";
 const FACTORY = "0x1F98431c8aD98523631AE4a59f267346ea31F984";
 
-describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => { 
-    let toaster: UniV3Toaster;
+describe("Univ3FusionToaster: Invest 5 WETH, 10000USDC", () => { 
+    let toaster: UniV3FusionToaster;
     let pool: IUniswapV3PoolState;
     let amount0Desired: bigint;
     let amount1Desired: bigint;
@@ -46,7 +47,7 @@ describe("Univ3Toaster: Invest 5 WETH, 10000USDC", () => {
       await reset(URL, BLOCKNUMBER);
 
       [maker1] = await ethers.getSigners();
-      const toaster_f = await ethers.getContractFactory("UniV3Toaster");
+      const toaster_f = await ethers.getContractFactory("UniV3FusionToaster");
       toaster = await toaster_f
         .deploy(MANAGER, FUSION)
         .then((t) => t.deployed());
