@@ -20,7 +20,7 @@ describe("Uniswap V3 Toaster Compound", () => {
     let toaster: UniV3FusionToaster;
     let maker: SignerWithAddress;
     let positionManager:INonfungiblePositionManager;
-    const {MANAGER,FEE,FUSION,USDC,WETH,ROUTER,MENU} = ADDRESS;
+    const {MANAGER,FEE,FUSION,USDC,WETH,ROUTER} = ADDRESS;
     before("Fork Arbitrum Mainnet & Deploy toaster & Tokens setup", async() => {
       // Fork Arbitrum Mainnet
       await reset(URL, BLOCKNUMBER);
@@ -59,8 +59,7 @@ describe("Uniswap V3 Toaster Compound", () => {
           amount0Max: MAX_UINT128,
           amount1Max: MAX_UINT128,
         });
-      
-        await mine(1);
+    
         expect(fee0).to.equal(165511423513165808854n);
         expect(fee1).to.equal(300383944n);
 
@@ -70,7 +69,7 @@ describe("Uniswap V3 Toaster Compound", () => {
     });
     it("Make Order for Compounding Fee", () => {
       // Calculating Amount 
-
+      
       
     });
     it("Fill Order(partial) by Taker", () => {});
