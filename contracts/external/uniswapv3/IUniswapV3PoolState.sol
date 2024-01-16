@@ -31,6 +31,8 @@ interface IUniswapV3PoolState {
             bool unlocked
         );
 
-
+    /// @notice The currently in range liquidity available to the pool
+    /// @dev This value has no relationship to the total liquidity across all ticks
+    function liquidity() external view returns (uint128);
     
 }

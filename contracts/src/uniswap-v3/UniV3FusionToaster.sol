@@ -7,72 +7,42 @@ import {INonfungiblePositionManager} from "../../external/uniswapv3/INonfungible
 import {IUniswapV3Factory} from "../../external/uniswapv3/IUniswapV3Factory.sol";
 import {IPeripheryImmutableState}from "../../external/uniswapv3/IPeripheryImmutableState.sol";
 import {IUniswapV3PoolState} from "../../external/uniswapv3/IUniswapV3PoolState.sol";
+import {IUniswapV3PoolImmutables} from "../../external/uniswapv3/IUniswapV3PoolImmutables.sol";
+import {IUniswapV3PoolActions} from "../../external/uniswapv3/IUniswapV3PoolActions.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SqrtPriceMath,SafeCast} from "../../external/uniswapv3/libraries/SqrtPriceMath.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {ZapOneTickSpacing} from "../libraries/ZapOneTickSpacing.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {TickMath} from "../../external/uniswapv3/libraries/TickMath.sol";
 import {WETH9} from "../../token/WETH9.sol";
 import {IERC721Permit,IERC721} from "../../token/IERC721Permit.sol";
+import {IUniV3FusionToaster,Order} from "../interfaces/IUniV3FusionToaster.sol";
 
-struct Order {
-        uint256 salt;
-        address makerAsset;
-        address takerAsset;
-        address maker;
-        address receiver;
-        address allowedSender;  // equals to Zero address on public orders
-        uint256 makingAmount;
-        uint256 takingAmount;
-        uint256 offsets;
-        // bytes makerAssetData;
-        // bytes takerAssetData;
-        // bytes getMakingAmount; // this.staticcall(abi.encodePacked(bytes, swapTakerAmount)) => (swapMakerAmount)
-        // bytes getTakingAmount; // this.staticcall(abi.encodePacked(bytes, swapMakerAmount)) => (swapTakerAmount)
-        // bytes predicate;       // this.staticcall(bytes) => (bool)
-        // bytes permit;          // On first fill: permit.1.call(abi.encodePacked(permit.selector, permit.2))
-        // bytes preInteraction;
-        // bytes postInteraction;
-        bytes interactions; // concat(makerAssetData, takerAssetData, getMakingAmount, getTakingAmount, predicate, permit, preIntercation, postInteraction)
-}
-contract UniV3FusionToaster is IPostInteractionNotificationReceiver,IPreInteractionNotificationReceiver,Ownable{
+//           PreInteractionData                 |     PostInteractionData
+//   mint            X                          |            O (isCompound = false)
+// rebalance         O(isCompound = false)      |            O (isCompound = false)
+// compound          O(isCompound = true)       |            O (isCompound = true)
+// collect           O((isCompound = true)      |            X
+contract UniV3FusionToaster is IPostInteractionNotificationReceiver,IPreInteractionNotificationReceiver,Ownable,IUniV3FusionToaster {
     using Math for uint256;
-    uint256 constant Q96 = 1 << 96;
-    uint256 constant Q192 = 1 << 192;
 
     mapping(bytes32 => mapping(address => uint)) public making;
     mapping(bytes32 => mapping(address => uint)) public taking;
+    mapping(bytes32 => bool) public isWithdrawn;
     INonfungiblePositionManager immutable public manager;
     IUniswapV3Factory immutable public factory;
     WETH9 immutable public WETH;
     address immutable public oneInch;
     uint256 public protocolFee;
+    error InvalidOrder();
+    
+    error InvalidMaker();
+    error InvalidCallback();
 
     event CancelInvest(bytes32 indexed orderHash,Order order);
-    struct InteractionDataMint {
-        address baseToken;
-        address quoteToken;
-        uint256 baseAmountDesired; // baseAmountDesired
-        uint256 quoteAmountDesired; // quoteAmountDesired
-        uint24 fee;
-        int24 tickLower;
-        int24 tickUpper;
-    } 
-    struct InteractionDataIncreaseLiquidity {
-        uint256 tokenId;
-        address makerAsset;
-        uint256 baseAmountDesired; // baseAmountDesired
-        uint256 quoteAmountDesired; // quoteAmountDesired
-    }
-    struct ActualAmountCache {
-        uint256 actualAmount0;
-        uint256 actualAmount1;
-        uint256 amount0Result;
-        uint256 amount1Result;
-        uint256 surplus0;
-        uint256 surplus1;
-    }
+  
     constructor(address _manager,address _oneInch) Ownable(msg.sender){
         manager = INonfungiblePositionManager(_manager);
         factory = IUniswapV3Factory(IPeripheryImmutableState(_manager).factory());
@@ -88,15 +58,15 @@ contract UniV3FusionToaster is IPostInteractionNotificationReceiver,IPreInteract
      * @param takingAmount takingAmount
      * @param remainingAmount remainingAmount
      * @param interactionData introduction data
-     * @dev interactionData = abi.encode(isCompound,baseToken, quoteToken, fee, tickLower, tickUpper, baseAmountDesired, quoteAmountDesired,) or abi.encode(isHarvest,tokenId,makerAsset,baseAmountDesired, quoteAmountDesired)
-     * if user want to invest 5 WETH & 1000 USDC, baseAmountDesired = 5 WETH, quoteAmountDesired = 1000 USDC
+     * @dev interactionData = abi.encode(false,baseToken, quoteToken, fee, tickLower, tickUpper, baseAmountDesired, quoteAmountDesired,): mint/rebalance or abi.encode(true,tokenId,makerAsset,baseAmountDesired, quoteAmountDesired):compound
+     * if user want to invest 5 WETH & 1000 USDC, making 1WETH to USDC by resolver,baseAmountDesired = 5 WETH, quoteAmountDesired = 1000 USDC
      */
     function fillOrderPostInteraction(bytes32 orderHash, address maker, address, uint256 makingAmount, uint256 takingAmount, uint256 remainingAmount, bytes memory interactionData) override external {
         
         (bool isCompund) = abi.decode(interactionData, (bool));
+        ActualAmountCache memory cache;
         if(!isCompund) { // for mint & rebalance order 
             InteractionDataMint memory data;
-            ActualAmountCache memory cache;
             ( , data.baseToken, data.quoteToken,data.fee, data.tickLower, data.tickUpper,data.baseAmountDesired, data.quoteAmountDesired) = abi.decode(
                 interactionData,
                 (bool, address, address, uint24, int24, int24, uint, uint)
@@ -107,105 +77,119 @@ contract UniV3FusionToaster is IPostInteractionNotificationReceiver,IPreInteract
                 making[orderHash][data.baseToken] += makingAmount;
                 return;
             }
-            // if remaining amount = 0, pull token
-            uint makingAmountTotal = making[orderHash][data.baseToken] + makingAmount;
-            uint takingAmountTotal = taking[orderHash][data.quoteToken] + takingAmount;
-            making[orderHash][data.baseToken] = 0;
-            taking[orderHash][data.quoteToken] = 0;
-            {   
-                uint baseAmountToPull = data.baseAmountDesired - makingAmountTotal;
-                uint quoteAmountToPull = data.quoteAmountDesired;
-
-                if(baseAmountToPull > 0) SafeERC20.safeTransferFrom(IERC20(data.baseToken), maker, address(this), baseAmountToPull);
-                if(quoteAmountToPull > 0) SafeERC20.safeTransferFrom(IERC20(data.quoteToken), maker, address(this), quoteAmountToPull);
-
-                SafeERC20.forceApprove(IERC20(data.baseToken), address(manager), baseAmountToPull);
-                SafeERC20.forceApprove(IERC20(data.quoteToken), address(manager), data.quoteAmountDesired + takingAmountTotal);
-            } 
-           
-            // mint position
             {
-                (cache.actualAmount0, cache.actualAmount1) = (data.baseToken < data.quoteToken) ? (data.baseAmountDesired - makingAmountTotal,data.quoteAmountDesired + takingAmountTotal) : (data.quoteAmountDesired + takingAmountTotal,data.baseAmountDesired - makingAmountTotal);
-                ( , ,cache.amount0Result,cache.amount1Result) = manager.mint(INonfungiblePositionManager.MintParams({
-                    token0: (data.baseToken < data.quoteToken) ? data.baseToken: data.quoteToken,
-                    token1: (data.baseToken < data.quoteToken) ? data.quoteToken: data.baseToken, 
-                    fee: data.fee,
-                    tickLower: data.tickLower,
-                    tickUpper: data.tickUpper,
-                    amount0Desired: cache.actualAmount0,
-                    amount1Desired: cache.actualAmount1,
-                    amount0Min: 0,
-                    amount1Min: 0,
-                    recipient: maker,
-                    deadline: block.timestamp
-                }));
-                unchecked {
-                    (cache.surplus0,cache.surplus1) = ((cache.actualAmount0 - cache.amount0Result),(cache.actualAmount1 - cache.amount1Result));
+                // if remaining amount = 0, pull token
+                uint makingAmountTotal = making[orderHash][data.baseToken] + makingAmount;
+                uint takingAmountTotal = taking[orderHash][data.quoteToken] + takingAmount;
+                //TODO: check whether if the remove statement is necessary
+                making[orderHash][data.baseToken] = 0;
+                taking[orderHash][data.quoteToken] = 0;
+                {   
+                    uint baseAmountToPull = data.baseAmountDesired - makingAmountTotal;
+                    uint quoteAmountToPull = data.quoteAmountDesired;
+
+                    if(baseAmountToPull > 0) SafeERC20.safeTransferFrom(IERC20(data.baseToken), maker, address(this), baseAmountToPull);
+                    if(quoteAmountToPull > 0) SafeERC20.safeTransferFrom(IERC20(data.quoteToken), maker, address(this), quoteAmountToPull);
+
+                    SafeERC20.forceApprove(IERC20(data.baseToken), address(manager), baseAmountToPull);
+                    SafeERC20.forceApprove(IERC20(data.quoteToken), address(manager), data.quoteAmountDesired + takingAmountTotal);
+                } 
+
+                // mint position
+                {
+                    (cache.amount0In, cache.amount1In) = (data.baseToken < data.quoteToken) ? (data.baseAmountDesired - makingAmountTotal,data.quoteAmountDesired + takingAmountTotal) : (data.quoteAmountDesired + takingAmountTotal,data.baseAmountDesired - makingAmountTotal);
+                    // zap on uniswap v3 one tickspacing
+                    // Assuming there are only enough swaps to keep the current price from tickspacing out. Otherwise, return all remaining tokens to the user after minting.
+                    ZapOneTickSpacing.zapOnOneTickSpacing(cache,factory,data.quoteToken,data.baseToken,data.fee);
+                    ( , ,cache.amount0InResult,cache.amount1InResult) = manager.mint(INonfungiblePositionManager.MintParams({
+                        token0: (data.baseToken < data.quoteToken) ? data.baseToken: data.quoteToken,
+                        token1: (data.baseToken < data.quoteToken) ? data.quoteToken: data.baseToken, 
+                        fee: data.fee,
+                        tickLower: data.tickLower,
+                        tickUpper: data.tickUpper,
+                        amount0Desired: cache.amount0In,
+                        amount1Desired: cache.amount1In,
+                        amount0Min: 0,
+                        amount1Min: 0,
+                        recipient: maker,
+                        deadline: block.timestamp
+                    }));
+
                 }
             }
-
-            // if surplus > 0, return surplus to maker
-            if(cache.surplus0 > 0 ) SafeERC20.safeTransfer(IERC20(data.quoteToken < data.baseToken ? data.quoteToken : data.baseToken), maker, cache.surplus0);
-            if(cache.surplus1 > 0) SafeERC20.safeTransfer(IERC20(data.quoteToken < data.baseToken ? data.baseToken : data.quoteToken), maker, cache.surplus1);   
+            {
+                uint surplus0;
+                uint surplus1;
+                unchecked {
+                    (surplus0,surplus1) = ((cache.amount0In - cache.amount0InResult),(cache.amount1In - cache.amount1InResult));
+                }
+                // if surplus > 0, return surplus to maker
+                if(surplus0 > 0 ) SafeERC20.safeTransfer(IERC20(data.quoteToken < data.baseToken ? data.quoteToken : data.baseToken), maker, surplus0);
+                if(surplus1 > 0) SafeERC20.safeTransfer(IERC20(data.quoteToken < data.baseToken ? data.baseToken : data.quoteToken), maker, surplus1);   
             
-            
+            }
             //Reset Approval
             SafeERC20.forceApprove(IERC20(data.baseToken), address(manager), 0);
             SafeERC20.forceApprove(IERC20(data.quoteToken), address(manager), 0);
 
         } else { // for compound order
             InteractionDataIncreaseLiquidity memory data;
-            
             ( ,data.tokenId,data.makerAsset,data.baseAmountDesired, data.quoteAmountDesired) = abi.decode(interactionData,(bool,uint256,address,uint256,uint256));
-            address takerAsset; 
-            {
-                (,,address token0,address token1,,,,,,,,) = manager.positions(data.tokenId);
-                takerAsset = (data.makerAsset == token0) ? token1 : token0;
+            uint24 fee;
+            {   
+                address _token0;
+                address _token1;
+                (,,_token0,_token1,fee,,,,,,,) = manager.positions(data.tokenId);
+                data.takerAsset = (data.makerAsset == _token0) ? _token1 : _token0;
             }
-
             if (remainingAmount > 0) {
-                taking[orderHash][takerAsset] += takingAmount;
+                taking[orderHash][data.takerAsset] += takingAmount;
                 making[orderHash][data.makerAsset] += makingAmount;
                 return;
             }
-
-            uint makingAmountTotal = making[orderHash][data.makerAsset] + makingAmount;
-            uint takingAmountTotal = taking[orderHash][takerAsset] + takingAmount;
-            making[orderHash][data.makerAsset] = 0;
-            taking[orderHash][takerAsset] = 0;
-
-            SafeERC20.forceApprove(IERC20(data.makerAsset), address(manager), data.baseAmountDesired - makingAmountTotal);
-            SafeERC20.forceApprove(IERC20(takerAsset), address(manager), data.quoteAmountDesired + takingAmountTotal);
-            uint surplus0;
-            uint surplus1;
             {
-                (uint actualAmount0, uint actualAmount1) = (data.makerAsset < takerAsset) ? (data.baseAmountDesired - makingAmountTotal,data.quoteAmountDesired + takingAmountTotal) : (data.quoteAmountDesired + takingAmountTotal,data.baseAmountDesired - makingAmountTotal);
+                uint makingAmountTotal = making[orderHash][data.makerAsset] + makingAmount;
+                uint takingAmountTotal = taking[orderHash][data.takerAsset] + takingAmount;
+                //TODO: check whether if the remove statement is necessary
+                making[orderHash][data.makerAsset] = 0;
+                taking[orderHash][data.takerAsset] = 0;
 
-                ( ,uint _amount0Result,uint _amount1Result) = manager.increaseLiquidity(INonfungiblePositionManager.IncreaseLiquidityParams({
+                SafeERC20.forceApprove(IERC20(data.makerAsset), address(manager), data.baseAmountDesired - makingAmountTotal);
+                SafeERC20.forceApprove(IERC20(data.takerAsset), address(manager), data.quoteAmountDesired + takingAmountTotal);
+
+                
+                (cache.amount0In, cache.amount1In) = (data.makerAsset < data.takerAsset) ? (data.baseAmountDesired - makingAmountTotal,data.quoteAmountDesired + takingAmountTotal) : (data.quoteAmountDesired + takingAmountTotal,data.baseAmountDesired - makingAmountTotal);
+                // zap on uniswap v3 one tickspacing
+                // Assuming there are only enough swaps to keep the current price from tickspacing out. Otherwise, return all remaining tokens to the user after minting. 
+                ZapOneTickSpacing.zapOnOneTickSpacing(cache,factory,data.takerAsset,data.makerAsset,fee);
+                ( ,cache.amount0InResult,cache.amount1InResult) = manager.increaseLiquidity(INonfungiblePositionManager.IncreaseLiquidityParams({
                     tokenId: data.tokenId,
-                    amount0Desired: actualAmount0,
-                    amount1Desired: actualAmount1,
+                    amount0Desired: cache.amount0In,
+                    amount1Desired: cache.amount1In,
                     amount0Min: 0,
                     amount1Min: 0,
                     deadline: block.timestamp
                 }));
-                unchecked {
-                    (surplus0,surplus1) = (actualAmount0 - _amount0Result,actualAmount1 - _amount1Result);
-                }
-            }
 
-            // if surplus > 0, return surplus to maker , it will be always quoteToken
-            if(surplus0 > 0) SafeERC20.safeTransfer(IERC20(data.makerAsset), maker, surplus0);
-            if(surplus1 > 0) SafeERC20.safeTransfer(IERC20(takerAsset), maker, surplus1);
-            
+                
+            }
+            {
+                uint surplus0;
+                uint surplus1;
+                unchecked {
+                    (surplus0,surplus1) = (cache.amount0In - cache.amount0InResult,cache.amount1In - cache.amount1InResult);
+                }
+                // if surplus > 0, return surplus to maker , it will be always quoteToken
+                if(surplus0 > 0) SafeERC20.safeTransfer(IERC20(data.makerAsset), maker, surplus0);
+                if(surplus1 > 0) SafeERC20.safeTransfer(IERC20(data.takerAsset), maker, surplus1);
+            }
             //Reset Approval
             SafeERC20.forceApprove(IERC20(data.makerAsset), address(manager), 0);
-            SafeERC20.forceApprove(IERC20(takerAsset), address(manager), 0);
+            SafeERC20.forceApprove(IERC20(data.takerAsset), address(manager), 0);
             
         }
         
     }
-
 
     function cancelInvest(Order memory order,bytes32 orderHash) external {
         require(order.maker == msg.sender,"INVALID_MAKER");
@@ -218,23 +202,14 @@ contract UniV3FusionToaster is IPostInteractionNotificationReceiver,IPreInteract
         emit CancelInvest(orderHash,order);
     }
 
-
-    struct PreInteractionCache {
-        uint tokenId;
-        bool isCompound;
-        uint8 v;
-        bytes32 r;
-        bytes32 s;
-    }
-
     // if user allowance of token0, token1  < amount0, amount1, user should call permit first
     function fillOrderPreInteraction(
         bytes32 orderHash,
         address maker,
-        address taker,
-        uint256 makingAmount,
-        uint256 takingAmount,
-        uint256 remainingAmount,
+        address,
+        uint256,
+        uint256,
+        uint256,
         bytes memory interactionData // abi.encode(isCompound,tokenId,v,r,s)
     ) external {
         PreInteractionCache memory cache;
@@ -247,9 +222,11 @@ contract UniV3FusionToaster is IPostInteractionNotificationReceiver,IPreInteract
             IERC20(token0).transfer(maker,collectAmount0);
             IERC20(token1).transfer(maker,collectAmount1);
         } else { // for rebalance order
+            if(isWithdrawn[orderHash]) return;
             (uint withdrawAmount0, uint withdrawAmount1) = _withdrawPosition(cache.tokenId, maker, cache.v, cache.r, cache.s);
             IERC20(token0).transfer(maker,withdrawAmount0);
             IERC20(token1).transfer(maker,withdrawAmount1);
+            isWithdrawn[orderHash] = true;
         }  
     }
 
@@ -266,7 +243,7 @@ contract UniV3FusionToaster is IPostInteractionNotificationReceiver,IPreInteract
 
         IERC721(address(manager)).safeTransferFrom(user,address(this),tokenId);
 
-        ( collectAmount0, collectAmount1)= manager.collect(INonfungiblePositionManager.CollectParams({
+        (collectAmount0, collectAmount1)= manager.collect(INonfungiblePositionManager.CollectParams({
             tokenId:tokenId,
             recipient: user,
             amount0Max: type(uint128).max,
@@ -305,7 +282,28 @@ contract UniV3FusionToaster is IPostInteractionNotificationReceiver,IPreInteract
         IERC721(address(manager)).safeTransferFrom(address(this),user,tokenId);
     }
 
+    
+    function uniswapV3SwapCallback(
+        int256 amount0Delta,
+        int256 amount1Delta,
+        bytes calldata _data
+    ) external  {
+        require(amount0Delta > 0 || amount1Delta > 0); // swaps entirely within 0-liquidity regions are not supported
+        (address tokenIn, address tokenOut, uint24 fee) = abi.decode(_data, (address, address, uint24)); // it has only one pool on path
+        {
+            address pool =factory.getPool(tokenIn, tokenOut, fee); 
+            if(pool != msg.sender) revert InvalidCallback();
+        }
+        (bool isExactInput, uint256 amountToPay) =
+            amount0Delta > 0
+                ? (tokenIn < tokenOut, uint256(amount0Delta))
+                : (tokenOut < tokenIn, uint256(amount1Delta));
+        if (isExactInput) {
+            SafeERC20.safeTransfer(IERC20(tokenIn), msg.sender, amountToPay);
+        }
+    }
 
+    
     function setProtocolFee(uint256 _fee) external onlyOwner {
         protocolFee = _fee;
     }

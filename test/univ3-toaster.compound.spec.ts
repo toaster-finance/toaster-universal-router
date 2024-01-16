@@ -2,7 +2,7 @@ import { mine, reset, setBalance } from "@nomicfoundation/hardhat-network-helper
 import { INonfungiblePositionManager, UniV3FusionToaster } from "../typechain-types";
 import { ethers } from "hardhat";
 import { burn, deposit } from "../utils/weth";
-import { parseEther, parseUnits } from "ethers/lib/utils";
+import { AbiCoder, parseEther, parseUnits } from "ethers/lib/utils";
 import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
 import { approveMax, doExactInput, doExactOutput, getBalance } from "../utils/erc20";
@@ -23,6 +23,7 @@ describe("Uniswap V3 Toaster Compound", () => {
     let positionManager:INonfungiblePositionManager;
     let fee0:bigint;
     let fee1:bigint;
+    let tokenId: string;
     const {MANAGER,FEE,FUSION,USDC,WETH,ROUTER,FACTORY} = ADDRESS;
     before("Fork Arbitrum Mainnet & Deploy toaster & Tokens setup", async() => {
       // Fork Arbitrum Mainnet
@@ -50,9 +51,9 @@ describe("Uniswap V3 Toaster Compound", () => {
     });
 
     it("Mint Position & Mining Fee", async () => {
-        const tokenId = await mint();
+        tokenId = await mint();
         await miningFee(10);
-        expect(tokenId).to.equal(963380n);
+        expect(tokenId).to.equal("963380");
     
         await mine(1);
         // Check Position
@@ -86,62 +87,41 @@ describe("Uniswap V3 Toaster Compound", () => {
     })
   // name: 'Uniswap V3 Positions NFT-V1', version: 'UNI-V3-POS', chainId: 42161, verifyingContract: MANAGER
     it("Make Order for Compounding Fee",async () => {
-      // Calculating Amount 
+      // Calculating Amount
       const [maker] = await ethers.getSigners();
-      const nonce = await ethers.getContractAt("INonfungiblePositionManager", MANAGER).nonces(maker.address)
-      const domain = {
-        "name": "Uniswap V3 Positions NFT-V1",
-        "version": "UNI-V3-POS",
-        "chainId": 42161,
-        "verifyingContract": MANAGER};
+      //@ts-ignore
+      const { v, r, s } = await signPermit(maker);
+      const encoder = new AbiCoder();
+      //// abi.encode(isCompound,tokenId,v,r,s)
+      const preIntercationData = encoder.encode(
+        ["bool", "uint256", "uint8", "bytes32", "bytes32"],
+        [
+          true,
+          tokenId,
+          v,
+          r,
+          s
+        ]
+      );
 
-      const types = {
-        "EIP712Domain": [
-              {
-                "name": "name",
-                "type": "string"
-              },
-              {
-                "name": "version",
-                "type": "string"
-              },
-              {
-                "name": "chainId",
-                "type": "uint256"
-              },
-              {
-                "name": "verifyingContract",
-                "type": "address"
-              }
-            ],
-        "Permit": [
-            {   
-              "name": "spender",
-              "type": "address"
-            },
-            {
-              "name": "tokenId",
-              "type": "uint256"
-            },
-            {
-              "name": "nonce",
-              "type": "uint256"
-            },
-            {
-              "name": "deadline",
-              "type": "uint256"
-            }
+      const postInteractionData = encoder.encode(
+        [
+        "bool",
+        "uint256",
+        "address",
+        "uint256",
+        "uint256",
         ],
-      };  
-      const value = {
-        "spender":toaster.address,
-        "tokenId":963380,
-        "nonce":0,
-        "deadline":ethers.constants.MaxUint256
-      };
-      maker._signTypedData(domain, types, value)
-      
-      
+        [
+          true,
+          tokenId,
+          maker.address,
+          fee0,
+          fee1,
+        ]
+      );
+
+
     });
     it("Fill Order(partial) by Taker", () => {});
     it("Fill Order(fully) by Taker", () => {});
@@ -200,5 +180,48 @@ describe("Uniswap V3 Toaster Compound", () => {
       await burn(WETH, (await getBalance(WETH)).toBigInt());
       
     };
+    const signPermit = async(maker:SignerWithAddress) => {
+      const nonce = await(
+        await ethers.getContractAt("INonfungiblePositionManager", MANAGER)
+      )
+        .positions(963380n)
+        .then((res) => res.nonce.toNumber());
+      const domain = {
+        name: "Uniswap V3 Positions NFT-V1",
+        version: "UNI-V3-POS",
+        chainId: 42161,
+        verifyingContract: MANAGER,
+      };
 
+      const types = {
+        Permit: [
+          {
+            name: "spender",
+            type: "address",
+          },
+          {
+            name: "tokenId",
+            type: "uint256",
+          },
+          {
+            name: "nonce",
+            type: "uint256",
+          },
+          {
+            name: "deadline",
+            type: "uint256",
+          },
+        ],
+      };
+      const value = {
+        spender: toaster.address,
+        tokenId: 963380,
+        nonce: nonce,
+        deadline: BLOCKNUMBER + 10,
+      };
+      const { r, v, s } = await maker
+        .signTypedData(domain, types, value)
+        .then((res) => ethers.utils.splitSignature(res));
+      return { r, v, s };
+    }
 });
