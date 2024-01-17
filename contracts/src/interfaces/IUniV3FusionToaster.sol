@@ -23,8 +23,8 @@ struct Order {
 interface IUniV3FusionToaster {
 
     struct InteractionDataMint {
-        address baseToken;
-        address quoteToken;
+        address makerAsset;
+        address takerAsset;
         uint256 baseAmountDesired; // baseAmountDesired
         uint256 quoteAmountDesired; // quoteAmountDesired
         uint24 fee;
@@ -39,6 +39,8 @@ interface IUniV3FusionToaster {
         uint256 quoteAmountDesired; // quoteAmountDesired
     }
     struct ActualAmountCache {
+        address token0;
+        address token1;
         uint256 amount0In;
         uint256 amount1In;
         uint256 amount0InResult;

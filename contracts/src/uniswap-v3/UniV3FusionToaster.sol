@@ -19,6 +19,7 @@ import {TickMath} from "../../external/uniswapv3/libraries/TickMath.sol";
 import {WETH9} from "../../token/WETH9.sol";
 import {IERC721Permit,IERC721} from "../../token/IERC721Permit.sol";
 import {IUniV3FusionToaster,Order} from "../interfaces/IUniV3FusionToaster.sol";
+import "hardhat/console.sol";
 
 //           PreInteractionData                 |     PostInteractionData
 //   mint            X                          |            O (isCompound = false)
@@ -58,52 +59,54 @@ contract UniV3FusionToaster is IPostInteractionNotificationReceiver,IPreInteract
      * @param takingAmount takingAmount
      * @param remainingAmount remainingAmount
      * @param interactionData introduction data
-     * @dev interactionData = abi.encode(false,baseToken, quoteToken, fee, tickLower, tickUpper, baseAmountDesired, quoteAmountDesired,): mint/rebalance or abi.encode(true,tokenId,makerAsset,baseAmountDesired, quoteAmountDesired):compound
+     * @dev interactionData = abi.encode(false,makerAsset, takerAsset, fee, tickLower, tickUpper, baseAmountDesired, quoteAmountDesired,): mint/rebalance or abi.encode(true,tokenId,makerAsset,baseAmountDesired, quoteAmountDesired):compound
      * if user want to invest 5 WETH & 1000 USDC, making 1WETH to USDC by resolver,baseAmountDesired = 5 WETH, quoteAmountDesired = 1000 USDC
      */
     function fillOrderPostInteraction(bytes32 orderHash, address maker, address, uint256 makingAmount, uint256 takingAmount, uint256 remainingAmount, bytes memory interactionData) override external {
         
         (bool isCompund) = abi.decode(interactionData, (bool));
-        ActualAmountCache memory cache;
+       
         if(!isCompund) { // for mint & rebalance order 
             InteractionDataMint memory data;
-            ( , data.baseToken, data.quoteToken,data.fee, data.tickLower, data.tickUpper,data.baseAmountDesired, data.quoteAmountDesired) = abi.decode(
+            ( , data.makerAsset, data.takerAsset,data.fee, data.tickLower, data.tickUpper,data.baseAmountDesired, data.quoteAmountDesired) = abi.decode(
                 interactionData,
                 (bool, address, address, uint24, int24, int24, uint, uint)
             );
         
             if (remainingAmount > 0) {
-                taking[orderHash][data.quoteToken] += takingAmount;
-                making[orderHash][data.baseToken] += makingAmount;
+                making[orderHash][data.makerAsset] += makingAmount;
+                taking[orderHash][data.takerAsset] += takingAmount;
                 return;
             }
+            ActualAmountCache memory cache;
+            (cache.token0,cache.token1) = data.makerAsset < data.takerAsset ? (data.makerAsset,data.takerAsset) : (data.takerAsset,data.makerAsset);
             {
                 // if remaining amount = 0, pull token
-                uint makingAmountTotal = making[orderHash][data.baseToken] + makingAmount;
-                uint takingAmountTotal = taking[orderHash][data.quoteToken] + takingAmount;
+                uint makingAmountTotal = making[orderHash][data.makerAsset] + makingAmount;
+                uint takingAmountTotal = taking[orderHash][data.takerAsset] + takingAmount;
                 //TODO: check whether if the remove statement is necessary
-                making[orderHash][data.baseToken] = 0;
-                taking[orderHash][data.quoteToken] = 0;
+                making[orderHash][data.makerAsset] = 0;
+                taking[orderHash][data.takerAsset] = 0;
                 {   
-                    uint baseAmountToPull = data.baseAmountDesired - makingAmountTotal;
+                    uint makerAssetAmountToPull = data.baseAmountDesired - makingAmountTotal;
                     uint quoteAmountToPull = data.quoteAmountDesired;
 
-                    if(baseAmountToPull > 0) SafeERC20.safeTransferFrom(IERC20(data.baseToken), maker, address(this), baseAmountToPull);
-                    if(quoteAmountToPull > 0) SafeERC20.safeTransferFrom(IERC20(data.quoteToken), maker, address(this), quoteAmountToPull);
+                    if(makerAssetAmountToPull > 0) SafeERC20.safeTransferFrom(IERC20(data.makerAsset), maker, address(this), makerAssetAmountToPull);
+                    if(quoteAmountToPull > 0) SafeERC20.safeTransferFrom(IERC20(data.takerAsset), maker, address(this), quoteAmountToPull);
 
-                    SafeERC20.forceApprove(IERC20(data.baseToken), address(manager), baseAmountToPull);
-                    SafeERC20.forceApprove(IERC20(data.quoteToken), address(manager), data.quoteAmountDesired + takingAmountTotal);
-                } 
+                }
 
                 // mint position
                 {
-                    (cache.amount0In, cache.amount1In) = (data.baseToken < data.quoteToken) ? (data.baseAmountDesired - makingAmountTotal,data.quoteAmountDesired + takingAmountTotal) : (data.quoteAmountDesired + takingAmountTotal,data.baseAmountDesired - makingAmountTotal);
+                    (cache.amount0In, cache.amount1In) = (data.makerAsset < data.takerAsset) ? (data.baseAmountDesired - makingAmountTotal,data.quoteAmountDesired + takingAmountTotal) : (data.quoteAmountDesired + takingAmountTotal,data.baseAmountDesired - makingAmountTotal);
                     // zap on uniswap v3 one tickspacing
                     // Assuming there are only enough swaps to keep the current price from tickspacing out. Otherwise, return all remaining tokens to the user after minting.
-                    ZapOneTickSpacing.zapOnOneTickSpacing(cache,factory,data.quoteToken,data.baseToken,data.fee);
+                    // ZapOneTickSpacing.zapOnOneTickSpacing(cache,factory,data.fee);
+                    SafeERC20.forceApprove(IERC20(cache.token0), address(manager), cache.amount0In);
+                    SafeERC20.forceApprove(IERC20(cache.token1), address(manager), cache.amount1In);
                     ( , ,cache.amount0InResult,cache.amount1InResult) = manager.mint(INonfungiblePositionManager.MintParams({
-                        token0: (data.baseToken < data.quoteToken) ? data.baseToken: data.quoteToken,
-                        token1: (data.baseToken < data.quoteToken) ? data.quoteToken: data.baseToken, 
+                        token0: cache.token0,
+                        token1: cache.token1, 
                         fee: data.fee,
                         tickLower: data.tickLower,
                         tickUpper: data.tickUpper,
@@ -124,29 +127,28 @@ contract UniV3FusionToaster is IPostInteractionNotificationReceiver,IPreInteract
                     (surplus0,surplus1) = ((cache.amount0In - cache.amount0InResult),(cache.amount1In - cache.amount1InResult));
                 }
                 // if surplus > 0, return surplus to maker
-                if(surplus0 > 0 ) SafeERC20.safeTransfer(IERC20(data.quoteToken < data.baseToken ? data.quoteToken : data.baseToken), maker, surplus0);
-                if(surplus1 > 0) SafeERC20.safeTransfer(IERC20(data.quoteToken < data.baseToken ? data.baseToken : data.quoteToken), maker, surplus1);   
+                if(surplus0 > 0 ) SafeERC20.safeTransfer(IERC20(data.takerAsset < data.makerAsset ? data.takerAsset : data.makerAsset), maker, surplus0);
+                if(surplus1 > 0) SafeERC20.safeTransfer(IERC20(data.takerAsset < data.makerAsset ? data.makerAsset : data.takerAsset), maker, surplus1);   
             
             }
             //Reset Approval
-            SafeERC20.forceApprove(IERC20(data.baseToken), address(manager), 0);
-            SafeERC20.forceApprove(IERC20(data.quoteToken), address(manager), 0);
+            SafeERC20.forceApprove(IERC20(data.makerAsset), address(manager), 0);
+            SafeERC20.forceApprove(IERC20(data.takerAsset), address(manager), 0);
 
         } else { // for compound order
             InteractionDataIncreaseLiquidity memory data;
             ( ,data.tokenId,data.makerAsset,data.baseAmountDesired, data.quoteAmountDesired) = abi.decode(interactionData,(bool,uint256,address,uint256,uint256));
             uint24 fee;
-            {   
-                address _token0;
-                address _token1;
-                (,,_token0,_token1,fee,,,,,,,) = manager.positions(data.tokenId);
-                data.takerAsset = (data.makerAsset == _token0) ? _token1 : _token0;
-            }
+            
             if (remainingAmount > 0) {
                 taking[orderHash][data.takerAsset] += takingAmount;
                 making[orderHash][data.makerAsset] += makingAmount;
                 return;
             }
+            ActualAmountCache memory cache;                
+            (,,cache.token0,cache.token1,fee,,,,,,,) = manager.positions(data.tokenId);
+            data.takerAsset = (data.makerAsset == cache.token0) ? cache.token1 : cache.token0;
+            
             {
                 uint makingAmountTotal = making[orderHash][data.makerAsset] + makingAmount;
                 uint takingAmountTotal = taking[orderHash][data.takerAsset] + takingAmount;
@@ -154,32 +156,31 @@ contract UniV3FusionToaster is IPostInteractionNotificationReceiver,IPreInteract
                 making[orderHash][data.makerAsset] = 0;
                 taking[orderHash][data.takerAsset] = 0;
 
-                SafeERC20.forceApprove(IERC20(data.makerAsset), address(manager), data.baseAmountDesired - makingAmountTotal);
-                SafeERC20.forceApprove(IERC20(data.takerAsset), address(manager), data.quoteAmountDesired + takingAmountTotal);
-
-                
                 (cache.amount0In, cache.amount1In) = (data.makerAsset < data.takerAsset) ? (data.baseAmountDesired - makingAmountTotal,data.quoteAmountDesired + takingAmountTotal) : (data.quoteAmountDesired + takingAmountTotal,data.baseAmountDesired - makingAmountTotal);
-                // zap on uniswap v3 one tickspacing
-                // Assuming there are only enough swaps to keep the current price from tickspacing out. Otherwise, return all remaining tokens to the user after minting. 
-                ZapOneTickSpacing.zapOnOneTickSpacing(cache,factory,data.takerAsset,data.makerAsset,fee);
-                ( ,cache.amount0InResult,cache.amount1InResult) = manager.increaseLiquidity(INonfungiblePositionManager.IncreaseLiquidityParams({
-                    tokenId: data.tokenId,
-                    amount0Desired: cache.amount0In,
-                    amount1Desired: cache.amount1In,
-                    amount0Min: 0,
-                    amount1Min: 0,
-                    deadline: block.timestamp
-                }));
-
                 
             }
+            // zap on uniswap v3 one tickspacing
+            // Assuming there are only enough swaps to keep the current price from tickspacing out. Otherwise, return all remaining tokens to the user after minting. 
+            // ZapOneTickSpacing.zapOnOneTickSpacing(cache,factory,fee);
+            SafeERC20.forceApprove(IERC20(cache.token0), address(manager), cache.amount0In);
+            SafeERC20.forceApprove(IERC20(cache.token1), address(manager), cache.amount1In);
+            // increase liquidity
+            ( ,cache.amount0InResult,cache.amount1InResult) = manager.increaseLiquidity(INonfungiblePositionManager.IncreaseLiquidityParams({
+                tokenId: data.tokenId,
+                amount0Desired: cache.amount0In,
+                amount1Desired: cache.amount1In,
+                amount0Min: 0,
+                amount1Min: 0,
+                deadline: block.timestamp
+            }));
+            // return surplus to maker           
             {
                 uint surplus0;
                 uint surplus1;
                 unchecked {
                     (surplus0,surplus1) = (cache.amount0In - cache.amount0InResult,cache.amount1In - cache.amount1InResult);
                 }
-                // if surplus > 0, return surplus to maker , it will be always quoteToken
+                // if surplus > 0, return surplus to maker , it will be always takerAsset
                 if(surplus0 > 0) SafeERC20.safeTransfer(IERC20(data.makerAsset), maker, surplus0);
                 if(surplus1 > 0) SafeERC20.safeTransfer(IERC20(data.takerAsset), maker, surplus1);
             }
@@ -289,6 +290,9 @@ contract UniV3FusionToaster is IPostInteractionNotificationReceiver,IPreInteract
         bytes calldata _data
     ) external  {
         require(amount0Delta > 0 || amount1Delta > 0); // swaps entirely within 0-liquidity regions are not supported
+        console.log("callback");
+        console.log("amount0Delta",amount0Delta > 0,amount0Delta > 0 ? uint(amount0Delta) : uint(-amount0Delta));
+        console.log("amount1Delta",amount1Delta > 0,amount1Delta > 0 ? uint(amount1Delta) : uint(-amount1Delta));
         (address tokenIn, address tokenOut, uint24 fee) = abi.decode(_data, (address, address, uint24)); // it has only one pool on path
         {
             address pool =factory.getPool(tokenIn, tokenOut, fee); 
